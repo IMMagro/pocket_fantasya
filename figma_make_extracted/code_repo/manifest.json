@@ -1,0 +1,53 @@
+{
+  "version": 2,
+  "commit_sha": "d9469d8e522b0de9b80dd77655c26d5ebe86baf9",
+  "refs": [
+    {
+      "name": "refs/heads/main",
+      "target_sha1": "d9469d8e522b0de9b80dd77655c26d5ebe86baf9"
+    }
+  ],
+  "packs": [
+    {
+      "uuid": "cc2ebab5-9c2a-44af-b058-e7f686b81e2c",
+      "type": "FULL",
+      "depth": 0,
+      "boundary_commits": [],
+      "object_count": 43,
+      "size_bytes": 30109,
+      "sequence_num": 0,
+      "checksum_sha1": "f569bb7cd53f863fcac558010fc827df28a81c73",
+      "created_at": 1786104221
+    },
+    {
+      "uuid": "cafab58e-85c0-4d5e-b2b4-2e1d2f15893b",
+      "type": "SHALLOW",
+      "depth": 20,
+      "boundary_commits": [],
+      "object_count": 43,
+      "size_bytes": 30109,
+      "sequence_num": 0,
+      "checksum_sha1": "4056780cae8dfe096f98bdd478a9191165d524cd",
+      "created_at": 1786104221
+    },
+    {
+      "uuid": "82679370-1eca-42d9-b405-813eb5993053",
+      "type": "SHALLOW",
+      "depth": 1,
+      "boundary_commits": [
+        "d9469d8e522b0de9b80dd77655c26d5ebe86baf9"
+      ],
+      "object_count": 30,
+      "size_bytes": 26985,
+      "sequence_num": 0,
+      "checksum_sha1": "c78aaf8508cb0c05b8b889ae6ddbd94bf48e2d62",
+      "created_at": 1786104221
+    }
+  ],
+  "lfs_objects": [
+    {
+      "oid": "dcc5e2d0411bcd70519183954c6275b1a1139c4a6ec858a08366e563bb6d3dc0",
+      "size_bytes": 154755
+    }
+  ]
+}

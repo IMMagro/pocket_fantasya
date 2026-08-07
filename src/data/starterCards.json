@@ -1,0 +1,72 @@
+[
+  {
+    "id": "card_tralalero_brainrot",
+    "name": "Trallallero Trallallà Jr.",
+    "type": "CREATURA",
+    "cost": 2,
+    "atk": 3,
+    "hp": 3,
+    "rarity": "legendary",
+    "accentColor": "#0284c7",
+    "imageUrl": "/illustrations/tralalero_brainrot.png",
+    "abilityTitle": "SPRUZZATA MARCIA",
+    "abilityText": "Quando entra in gioco con le sue sneakers, infligge 2 danni a tutti i nemici.",
+    "flavorText": "Ocean vibes & drip supremo."
+  },
+  {
+    "id": "card_trallallero_onda",
+    "name": "Trallallero sull'Onda",
+    "type": "CREATURA",
+    "cost": 1,
+    "atk": 2,
+    "hp": 2,
+    "rarity": "rare",
+    "accentColor": "#06b6d4",
+    "imageUrl": "/illustrations/trallallero_onda.png",
+    "abilityTitle": "SURFING RUN",
+    "abilityText": "Pesca 1 carta quando entra in campo.",
+    "flavorText": "Cavalca la cresta dell'onda senza mai cadere."
+  },
+  {
+    "id": "card_void_golem",
+    "name": "Void Golem",
+    "type": "CREATURA",
+    "cost": 5,
+    "atk": 5,
+    "hp": 6,
+    "rarity": "epic",
+    "accentColor": "#9333ea",
+    "imageUrl": "/illustrations/void_golem.png",
+    "abilityTitle": "VOID RESONANCE",
+    "abilityText": "GUARDIANO: I nemici devono attaccare questa creatura. Infligge 2 danni a chi la attacca.",
+    "flavorText": "Nato dai frammenti d'ossidiana nel cratere abissale."
+  },
+  {
+    "id": "card_cyber_fox",
+    "name": "Volpe Mistica Cyber",
+    "type": "CREATURA",
+    "cost": 3,
+    "atk": 3,
+    "hp": 4,
+    "rarity": "rare",
+    "accentColor": "#0284c7",
+    "imageUrl": "/illustrations/cyber_shaman_fox.png",
+    "abilityTitle": "FLUSSO SPIRITUALE",
+    "abilityText": "Cura il tuo Eroe di 4 HP e aumenta il tuo Mana massimo di 1.",
+    "flavorText": "Vede i fili invisibili che legano la magia al codice."
+  },
+  {
+    "id": "card_iron_knight",
+    "name": "Golem di Ferro Forgiato",
+    "type": "CREATURA",
+    "cost": 4,
+    "atk": 4,
+    "hp": 5,
+    "rarity": "common",
+    "accentColor": "#eab308",
+    "imageUrl": "/illustrations/iron_mech_knight.png",
+    "abilityTitle": "SCUDO TERRESTRE",
+    "abilityText": "GUARDIANO: Protegge l'Eroe dai danni diretti.",
+    "flavorText": "Forgiato nei forni sotterranei della città di pietra."
+  }
+]
