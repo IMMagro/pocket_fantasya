@@ -1,5 +1,43 @@
 import React, { useState } from 'react';
-import { Swords, Heart, Target } from 'lucide-react';
+import { Swords, Heart, Target, Sparkles, Crown, Palette } from 'lucide-react';
+
+export const CARD_VARIANTS = {
+  standard: {
+    id: 'standard',
+    label: 'Standard',
+    badge: null,
+    cssClass: '',
+    tagColor: '#6C8D88'
+  },
+  holo: {
+    id: 'holo',
+    label: 'Olografica (Holo)',
+    badge: '✨ HOLO',
+    cssClass: 'tactile-holo',
+    tagColor: '#38bdf8'
+  },
+  gold_foil: {
+    id: 'gold_foil',
+    label: 'Foil Dorata (Gold)',
+    badge: '🌟 GOLD FOIL',
+    cssClass: 'tactile-gold-foil',
+    tagColor: '#f59e0b'
+  },
+  full_art: {
+    id: 'full_art',
+    label: 'Full-Art',
+    badge: '🎨 FULL ART',
+    cssClass: '',
+    tagColor: '#10b981'
+  },
+  secret_holo: {
+    id: 'secret_holo',
+    label: 'Secret Rare (Full-Art Gold Holo)',
+    badge: '👑 SECRET RARE',
+    cssClass: 'tactile-secret-holo',
+    tagColor: '#ec4899'
+  }
+};
 
 const RARITY_THEMES = {
   common: {
@@ -15,21 +53,21 @@ const RARITY_THEMES = {
   epic: {
     accent: '#9333ea',
     badge: 'Epica',
-    foil: 'tactile-foil'
+    foil: 'tactile-holo'
   },
   legendary: {
     accent: '#d97706',
     badge: 'Leggendaria',
-    foil: 'tactile-foil'
+    foil: 'tactile-gold-foil'
   },
   mythic: {
     accent: '#e11d48',
     badge: 'Mitica',
-    foil: 'tactile-foil'
+    foil: 'tactile-secret-holo'
   }
 };
 
-// Sizing configurations aligned with 1:1 Reaper Frog proportions (~50% height for artwork)
+// Sizing configurations aligned with 1:1 Reaper Frog proportions (~50% height for standard artwork)
 const SIZES = {
   sm: {
     width: 175,
@@ -40,13 +78,14 @@ const SIZES = {
     titleSize: 10.5,
     subtitleSize: 7,
     headerPl: 25,
-    artHeight: 120, // 48% of card height
+    artHeight: 120,
     pipTile: 11,
     pipFont: 6.5,
     abilityFont: 8,
     abilityLineHeight: 1.2,
     flavorFont: 7,
-    footerFont: 7
+    footerFont: 7,
+    fullArtTagSize: 7
   },
   md: {
     width: 230,
@@ -57,13 +96,14 @@ const SIZES = {
     titleSize: 13.5,
     subtitleSize: 8.5,
     headerPl: 34,
-    artHeight: 160, // 48.5% of card height
+    artHeight: 160,
     pipTile: 15,
     pipFont: 8,
     abilityFont: 10,
     abilityLineHeight: 1.3,
     flavorFont: 8.5,
-    footerFont: 8.5
+    footerFont: 8.5,
+    fullArtTagSize: 8
   },
   lg: {
     width: 280,
@@ -74,13 +114,14 @@ const SIZES = {
     titleSize: 16,
     subtitleSize: 10,
     headerPl: 42,
-    artHeight: 200, // 50% of card height
+    artHeight: 200,
     pipTile: 17,
     pipFont: 9.5,
     abilityFont: 11.5,
     abilityLineHeight: 1.35,
     flavorFont: 9.5,
-    footerFont: 9.5
+    footerFont: 9.5,
+    fullArtTagSize: 9
   },
   xl: {
     width: 340,
@@ -91,13 +132,14 @@ const SIZES = {
     titleSize: 19,
     subtitleSize: 11.5,
     headerPl: 48,
-    artHeight: 245, // 50.5% of card height
+    artHeight: 245,
     pipTile: 20,
     pipFont: 11.5,
     abilityFont: 13,
     abilityLineHeight: 1.4,
     flavorFont: 11,
-    footerFont: 11
+    footerFont: 11,
+    fullArtTagSize: 10.5
   }
 };
 
@@ -106,6 +148,7 @@ export function TactileCard({
   size = 'md', 
   interactive = true, 
   combatView = false, 
+  variant: forcedVariant,
   onClick, 
   className = '',
   style = {}
@@ -116,8 +159,17 @@ export function TactileCard({
   if (!card) return null;
 
   const cfg = SIZES[size] || SIZES.md;
-  const rarityInfo = RARITY_THEMES[card.rarity || 'common'] || RARITY_THEMES.common;
+  const cardRarity = card.rarity || 'common';
+  const rarityInfo = RARITY_THEMES[cardRarity] || RARITY_THEMES.common;
   const isCreature = (card.type || 'CREATURA').toUpperCase() === 'CREATURA';
+
+  // Active Variant determination (forced prop or card attribute or fallback from rarity)
+  const activeVariantKey = forcedVariant || card.variant || (card.isFullArt ? 'full_art' : 'standard');
+  const variantInfo = CARD_VARIANTS[activeVariantKey] || CARD_VARIANTS.standard;
+  const isFullArtMode = activeVariantKey === 'full_art' || activeVariantKey === 'secret_holo' || !!card.isFullArt;
+
+  // Active Special Finish Shader (from variant or rarity fallback)
+  const finishShaderClass = variantInfo.cssClass || (activeVariantKey === 'standard' ? rarityInfo.foil : '');
 
   // 3D Tilt calculations
   const handleMouseMove = (e) => {
@@ -126,8 +178,8 @@ export function TactileCard({
     const x = e.clientX - rect.left - rect.width / 2;
     const y = e.clientY - rect.top - rect.height / 2;
     setTilt({
-      x: (y / (rect.height / 2)) * -8,
-      y: (x / (rect.width / 2)) * 8
+      x: (y / (rect.height / 2)) * -9,
+      y: (x / (rect.width / 2)) * 9
     });
   };
 
@@ -150,28 +202,126 @@ export function TactileCard({
         height: cfg.height,
         minHeight: cfg.height,
         maxHeight: cfg.height,
-        padding: cfg.padding,
+        padding: isFullArtMode ? '0' : cfg.padding,
         borderRadius: cfg.borderRadius,
         transform: interactive && isHovered 
-          ? `perspective(1000px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) scale3d(1.03, 1.03, 1.03)` 
+          ? `perspective(1000px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) scale3d(1.035, 1.035, 1.035)` 
           : 'perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)',
         transition: isHovered ? 'transform 0.08s ease-out' : 'transform 0.35s ease-out',
         ...style
       }}
-      className={`tactile-card-root group cursor-pointer ${rarityInfo.foil} ${className}`}
+      className={`tactile-card-root group cursor-pointer ${finishShaderClass} ${className}`}
     >
-      {/* Inset Hairline Double Frame */}
-      <div className="tactile-card-inset-frame" style={{ borderRadius: cfg.borderRadius - 4 }} />
+      {/* Inset Hairline Double Frame (when not full-art) */}
+      {!isFullArtMode && (
+        <div className="tactile-card-inset-frame" style={{ borderRadius: cfg.borderRadius - 4 }} />
+      )}
+
+      {/* Variant Tag Badge (if special variant) */}
+      {variantInfo.badge && (
+        <div 
+          className="tactile-variant-tag"
+          style={{
+            fontSize: cfg.fullArtTagSize,
+            backgroundColor: variantInfo.tagColor,
+            color: '#ffffff'
+          }}
+        >
+          {variantInfo.badge}
+        </div>
+      )}
 
       {/* ============================================================ */}
-      {/* CASE A: COMBAT VIEW (HERO BATTLEFIELD MODE)                  */}
+      {/* CASE 1: FULL-ART CARD RENDERING (FULL-BLEED ARTWORK)         */}
       {/* ============================================================ */}
-      {combatView ? (
+      {isFullArtMode ? (
+        <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
+          
+          {/* Top Floating Hanging Ribbon */}
+          <div 
+            className="tactile-ribbon"
+            style={{
+              width: cfg.ribbon.width,
+              height: cfg.ribbon.height,
+              left: cfg.ribbon.left,
+            }}
+          >
+            <span className="tactile-ribbon-cost" style={{ fontSize: cfg.ribbon.costSize }}>
+              {card.cost ?? 1}
+            </span>
+            <div 
+              className="tactile-ribbon-glyph" 
+              style={{ 
+                width: cfg.ribbon.glyphSize, 
+                height: cfg.ribbon.glyphSize,
+                marginBottom: cfg.ribbon.glyphMargin
+              }} 
+            />
+          </div>
+
+          {/* Top Floating Title Header */}
+          <div 
+            style={{ 
+              position: 'absolute', 
+              top: cfg.padding.split(' ')[0] || '8px', 
+              left: 0, 
+              right: 0, 
+              paddingLeft: cfg.headerPl + 4, 
+              paddingRight: 10,
+              zIndex: 12,
+              textAlign: 'center'
+            }}
+          >
+            <div className="tactile-title" style={{ fontSize: cfg.titleSize, textShadow: '0 1px 4px rgba(250,247,238,0.9)' }}>
+              {card.name || 'Senza Nome'}
+            </div>
+            <div className="tactile-subtitle" style={{ fontSize: cfg.subtitleSize, textShadow: '0 1px 2px rgba(250,247,238,0.8)' }}>
+              {isCreature 
+                ? `ATK: ${card.atk ?? 0} • HP: ${card.hp ?? 0} • ${card.type || 'CREATURA'}`
+                : `${card.type || 'MAGIA'}`
+              }
+            </div>
+          </div>
+
+          {/* Full-Art Bleed Character Artwork Container */}
+          <div className="tactile-fullart-container">
+            {card.imageUrl ? (
+              <img src={card.imageUrl} alt={card.name} className="tactile-fullart-img" />
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60%' }}>
+                <Target style={{ width: 48, height: 48, color: '#6C8D88', opacity: 0.6 }} />
+              </div>
+            )}
+          </div>
+
+          {/* Soft Bottom Parchment Fade */}
+          <div className="tactile-fullart-fade" />
+
+          {/* Minimalist Floating Overlay at bottom */}
+          <div className="tactile-fullart-info-overlay">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ color: '#d97706' }}>✦</span>
+              <span style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                {card.abilityTitle || (isCreature ? 'MOSTRO EFFETTO' : 'MAGIA')}
+              </span>
+            </div>
+
+            {isCreature && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ color: '#b91c1c' }}>⚔ {card.atk ?? 0}</span>
+                <span style={{ color: '#15803d' }}>♥ {card.hp ?? 0}</span>
+              </div>
+            )}
+          </div>
+
+        </div>
+      ) : combatView ? (
+        /* ============================================================ */
+        /* CASE 2: COMBAT VIEW (HERO BATTLEFIELD MODE)                  */
+        /* ============================================================ */
         <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', zIndex: 10 }}>
           
-          {/* Top Hanging Ribbon & Mini Header */}
           <div style={{ position: 'relative', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', minHeight: cfg.ribbon.height * 0.7 }}>
-            {/* Hanging Teal Ribbon Banner */}
             <div 
               className="tactile-ribbon"
               style={{
@@ -193,7 +343,6 @@ export function TactileCard({
               />
             </div>
 
-            {/* Title & Stats Header */}
             <div style={{ flex: 1, textAlign: 'right', paddingLeft: cfg.headerPl, paddingTop: 1 }}>
               <div className="tactile-title" style={{ fontSize: cfg.titleSize }}>
                 {card.name || 'Carta'}
@@ -204,7 +353,6 @@ export function TactileCard({
             </div>
           </div>
 
-          {/* Center Battlefield Artwork Frame */}
           <div className="tactile-artwork-frame" style={{ height: cfg.artHeight }}>
             {card.imageUrl ? (
               <img src={card.imageUrl} alt={card.name} />
@@ -213,7 +361,6 @@ export function TactileCard({
             )}
           </div>
 
-          {/* Bottom ATK / HP Stat Capsules */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid rgba(108,141,136,0.25)', paddingTop: 3 }}>
             {isCreature ? (
               <>
@@ -237,13 +384,12 @@ export function TactileCard({
         </div>
       ) : (
         /* ============================================================ */
-        /* CASE B: STANDARD FULL TACTILE CARD (1:1 REAPER FROG FIDELITY)*/
+        /* CASE 3: STANDARD FULL TACTILE CARD (1:1 REAPER FROG FIDELITY)*/
         /* ============================================================ */
         <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', zIndex: 10 }}>
           
           {/* Top Bar: Hanging Ribbon & Compact Title Header */}
           <div style={{ position: 'relative', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', minHeight: cfg.ribbon.height * 0.7 }}>
-            {/* Hanging Teal Ribbon Banner */}
             <div 
               className="tactile-ribbon"
               style={{
@@ -265,7 +411,6 @@ export function TactileCard({
               />
             </div>
 
-            {/* Card Title & Subtitle (Stats / Class) */}
             <div style={{ flex: 1, textAlign: 'center', paddingLeft: cfg.headerPl, paddingRight: 2, paddingTop: 1 }}>
               <div className="tactile-title" style={{ fontSize: cfg.titleSize }}>
                 {card.name || 'Senza Nome'}
@@ -281,7 +426,7 @@ export function TactileCard({
             <div style={{ width: 6 }} />
           </div>
 
-          {/* Grand Center Illustration Zone (Dominant Focus ~50%) */}
+          {/* Center Illustration Zone (~50% height) */}
           <div className="tactile-artwork-frame" style={{ height: cfg.artHeight, maxHeight: cfg.artHeight }}>
             {card.imageUrl ? (
               <img src={card.imageUrl} alt={card.name} />
@@ -293,7 +438,7 @@ export function TactileCard({
             )}
           </div>
 
-          {/* Geometric 4-Tile Command Pip Bar (Base for the character): ─── [ ◐ ] [ ◑ ] [ ◉ ] [ ⬝ ] ─── */}
+          {/* Geometric 4-Tile Command Pip Bar: ─── [ ◐ ] [ ◑ ] [ ◉ ] [ ⬝ ] ─── */}
           <div className="tactile-pip-bar">
             <div className="tactile-pip-line" />
             <div className="tactile-pip-tile" style={{ width: cfg.pipTile, height: cfg.pipTile, fontSize: cfg.pipFont }}>◐</div>

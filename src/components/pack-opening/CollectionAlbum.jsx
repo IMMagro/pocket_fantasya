@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { TactileCard } from '../card/TactileCard';
-import { BookOpen, Search, Filter, Sparkles, Layers } from 'lucide-react';
+import { TactileCard, CARD_VARIANTS } from '../card/TactileCard';
+import { BookOpen, Search, Filter, Sparkles, Layers, Crown, Palette } from 'lucide-react';
 import { soundEngine } from '../../engine/soundEngine';
 
 export function CollectionAlbum({ collection = {}, allCards = [] }) {
   const [filterRarity, setFilterRarity] = useState('all');
+  const [filterVariant, setFilterVariant] = useState('all');
   const [filterType, setFilterType] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCard, setSelectedCard] = useState(null);
@@ -15,7 +16,9 @@ export function CollectionAlbum({ collection = {}, allCards = [] }) {
                           (card.abilityText && card.abilityText.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesRarity = filterRarity === 'all' || card.rarity === filterRarity;
     const matchesType = filterType === 'all' || card.type === filterType;
-    return matchesSearch && matchesRarity && matchesType;
+    const cardVar = card.variant || (card.isFullArt ? 'full_art' : 'standard');
+    const matchesVariant = filterVariant === 'all' || cardVar === filterVariant;
+    return matchesSearch && matchesRarity && matchesType && matchesVariant;
   });
 
   const totalDistinctUnlocked = allCards.filter(c => (collection[c.id] || 0) > 0).length;
@@ -32,7 +35,7 @@ export function CollectionAlbum({ collection = {}, allCards = [] }) {
             Album Collezione (Card Binder)
           </h1>
           <p className="text-slate-400 text-sm mt-1">
-            Visualizza tutte le carte sbloccate sbustando i pacchetti.
+            Visualizza tutte le carte sbloccate sbustando i pacchetti, incluse le varianti <strong>Full-Art</strong>, <strong>Holo</strong> e <strong>Gold Foil</strong>.
           </p>
         </div>
 
@@ -65,6 +68,21 @@ export function CollectionAlbum({ collection = {}, allCards = [] }) {
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
+          {/* Variant Filter */}
+          <select
+            value={filterVariant}
+            onChange={(e) => { setFilterVariant(e.target.value); soundEngine.playButtonClick(); }}
+            className="bg-slate-900 border border-slate-700 text-amber-300 text-xs font-semibold rounded-lg px-3 py-1.5 focus:outline-none"
+          >
+            <option value="all">Tutte le Varianti</option>
+            <option value="standard">Standard (Pergamena)</option>
+            <option value="holo">✨ Olografica (Holo)</option>
+            <option value="gold_foil">🌟 Gold Foil</option>
+            <option value="full_art">🎨 Full-Art</option>
+            <option value="secret_holo">👑 Secret Rare</option>
+          </select>
+
+          {/* Rarity Filter */}
           <select
             value={filterRarity}
             onChange={(e) => { setFilterRarity(e.target.value); soundEngine.playButtonClick(); }}
@@ -78,6 +96,7 @@ export function CollectionAlbum({ collection = {}, allCards = [] }) {
             <option value="mythic">Mitiche</option>
           </select>
 
+          {/* Type Filter */}
           <select
             value={filterType}
             onChange={(e) => { setFilterType(e.target.value); soundEngine.playButtonClick(); }}

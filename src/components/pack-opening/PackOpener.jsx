@@ -1,15 +1,70 @@
 import React, { useState } from 'react';
-import { TactileCard } from '../card/TactileCard';
-import { Sparkles, Package, RotateCcw, CheckCircle2, Trophy } from 'lucide-react';
+import { TactileCard, CARD_VARIANTS } from '../card/TactileCard';
+import { Sparkles, Package, RotateCcw, CheckCircle2, Trophy, HelpCircle, Palette, Crown } from 'lucide-react';
 import { soundEngine } from '../../engine/soundEngine';
 import confetti from 'canvas-confetti';
+
+// Variant Finish Roll calculation based on rarity and chance
+export function rollCardFinishVariant(baseCard) {
+  if (!baseCard) return null;
+  const rarity = baseCard.rarity || 'common';
+  const roll = Math.random();
+
+  let variant = 'standard';
+  if (rarity === 'mythic') {
+    if (roll < 0.20) variant = 'secret_holo';
+    else if (roll < 0.45) variant = 'full_art';
+    else if (roll < 0.75) variant = 'gold_foil';
+    else if (roll < 0.95) variant = 'holo';
+    else variant = 'standard';
+  } else if (rarity === 'legendary') {
+    if (roll < 0.08) variant = 'secret_holo';
+    else if (roll < 0.28) variant = 'full_art';
+    else if (roll < 0.58) variant = 'gold_foil';
+    else if (roll < 0.88) variant = 'holo';
+    else variant = 'standard';
+  } else if (rarity === 'epic') {
+    if (roll < 0.03) variant = 'secret_holo';
+    else if (roll < 0.13) variant = 'full_art';
+    else if (roll < 0.33) variant = 'gold_foil';
+    else if (roll < 0.78) variant = 'holo';
+    else variant = 'standard';
+  } else if (rarity === 'rare') {
+    if (roll < 0.01) variant = 'secret_holo';
+    else if (roll < 0.06) variant = 'full_art';
+    else if (roll < 0.16) variant = 'gold_foil';
+    else if (roll < 0.46) variant = 'holo';
+    else variant = 'standard';
+  } else {
+    // Common
+    if (roll < 0.002) variant = 'secret_holo';
+    else if (roll < 0.017) variant = 'full_art';
+    else if (roll < 0.052) variant = 'gold_foil';
+    else if (roll < 0.202) variant = 'holo';
+    else variant = 'standard';
+  }
+
+  // If base card already had full_art set in creator, keep it or upgrade to secret_holo
+  if (baseCard.variant === 'full_art' && variant === 'standard') {
+    variant = 'full_art';
+  } else if (baseCard.variant && variant === 'standard') {
+    variant = baseCard.variant;
+  }
+
+  return {
+    ...baseCard,
+    variant,
+    isFullArt: variant === 'full_art' || variant === 'secret_holo'
+  };
+}
 
 export function PackOpener({ availableCards, onAddCardsToCollection }) {
   const [packState, setPackState] = useState('sealed'); // 'sealed', 'opening', 'revealing', 'done'
   const [pulledCards, setPulledCards] = useState([]);
   const [revealedIndices, setRevealedIndices] = useState(new Set());
+  const [showRatesModal, setShowRatesModal] = useState(false);
 
-  // Generate a randomized 5-card booster pack with rarity weights
+  // Generate a randomized 5-card booster pack with rarity weights and finish variant rolls
   const generatePack = () => {
     if (!availableCards || availableCards.length === 0) return [];
     
@@ -23,24 +78,30 @@ export function PackOpener({ availableCards, onAddCardsToCollection }) {
     // Slot 1-3: Commons (or fallback)
     for (let i = 0; i < 3; i++) {
       const pool = commons.length > 0 ? commons : availableCards;
-      pack.push(pool[Math.floor(Math.random() * pool.length)]);
+      const base = pool[Math.floor(Math.random() * pool.length)];
+      pack.push(rollCardFinishVariant(base));
     }
 
-    // Slot 4: Rare or higher
-    const rarePool = rares.length > 0 ? rares : availableCards;
-    pack.push(rarePool[Math.floor(Math.random() * rarePool.length)]);
+    // Slot 4: Rare or higher guaranteed
+    const rarePool = (rares.length > 0 || epics.length > 0 || legendaries.length > 0)
+      ? [...rares, ...epics, ...legendaries]
+      : availableCards;
+    const baseRare = rarePool[Math.floor(Math.random() * rarePool.length)];
+    pack.push(rollCardFinishVariant(baseRare));
 
-    // Slot 5: Lucky wildcard (50% Rare, 35% Epic, 15% Legendary/Mythic)
+    // Slot 5: Lucky wildcard (Rare / Epic / Legendary / Mythic)
     const roll = Math.random();
+    let baseWild;
     if (roll < 0.15 && legendaries.length > 0) {
-      pack.push(legendaries[Math.floor(Math.random() * legendaries.length)]);
+      baseWild = legendaries[Math.floor(Math.random() * legendaries.length)];
     } else if (roll < 0.50 && epics.length > 0) {
-      pack.push(epics[Math.floor(Math.random() * epics.length)]);
+      baseWild = epics[Math.floor(Math.random() * epics.length)];
     } else if (rares.length > 0) {
-      pack.push(rares[Math.floor(Math.random() * rares.length)]);
+      baseWild = rares[Math.floor(Math.random() * rares.length)];
     } else {
-      pack.push(availableCards[Math.floor(Math.random() * availableCards.length)]);
+      baseWild = availableCards[Math.floor(Math.random() * availableCards.length)];
     }
+    pack.push(rollCardFinishVariant(baseWild));
 
     return pack;
   };
@@ -66,11 +127,14 @@ export function PackOpener({ availableCards, onAddCardsToCollection }) {
     setRevealedIndices(updated);
 
     const card = pulledCards[index];
-    if (card && (card.rarity === 'legendary' || card.rarity === 'mythic' || card.rarity === 'epic')) {
+    const isSpecialVariant = card && (card.variant === 'full_art' || card.variant === 'secret_holo' || card.variant === 'gold_foil' || card.variant === 'holo');
+    const isHighRarity = card && (card.rarity === 'legendary' || card.rarity === 'mythic' || card.rarity === 'epic');
+
+    if (isSpecialVariant || isHighRarity) {
       soundEngine.playLegendaryFanfare();
       confetti({
-        particleCount: 70,
-        spread: 60,
+        particleCount: isSpecialVariant ? 90 : 60,
+        spread: 65,
         origin: { y: 0.6 }
       });
     }
@@ -88,8 +152,8 @@ export function PackOpener({ availableCards, onAddCardsToCollection }) {
     setRevealedIndices(all);
     soundEngine.playLegendaryFanfare();
     confetti({
-      particleCount: 100,
-      spread: 70,
+      particleCount: 120,
+      spread: 75,
       origin: { y: 0.6 }
     });
     setPackState('done');
@@ -107,15 +171,71 @@ export function PackOpener({ availableCards, onAddCardsToCollection }) {
     <div className="max-w-6xl mx-auto p-4 md:p-6 flex flex-col items-center justify-center min-h-[720px]">
       
       {/* Title */}
-      <div className="text-center mb-8">
+      <div className="text-center mb-6">
         <h1 className="text-3xl md:text-4xl font-bold font-serif text-slate-100 flex items-center justify-center gap-3">
           <Package className="w-8 h-8 text-amber-400" />
           Sbustamento Pacchetti 3D
         </h1>
         <p className="text-slate-400 text-sm mt-1">
-          Apri i tuoi booster pack personalizzati e trova le carte create nello Studio!
+          Apri i booster pack e trova versioni <strong>Full-Art</strong>, <strong>Olografiche</strong>, <strong>Gold Foil</strong> e <strong>Secret Rare</strong>!
         </p>
+
+        {/* Drop Rates Button */}
+        <button
+          onClick={() => setShowRatesModal(true)}
+          className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg border border-slate-700 transition"
+        >
+          <HelpCircle className="w-3.5 h-3.5 text-amber-400" /> Percentuali di Drop & Varianti
+        </button>
       </div>
+
+      {/* Rates Modal */}
+      {showRatesModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#131922] border border-amber-500/40 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-lg font-serif font-bold text-amber-300 flex items-center gap-2">
+                <Crown className="w-5 h-5 text-amber-400" /> Percentuali di Drop nei Pacchetti
+              </h3>
+              <button 
+                onClick={() => setShowRatesModal(false)}
+                className="text-slate-400 hover:text-slate-100 text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs text-slate-300">
+              <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 space-y-1">
+                <span className="font-bold text-amber-400 uppercase tracking-wider block">
+                  ✨ Distribuzione Slot Pacchetto (5 Carte):
+                </span>
+                <p>• <strong>Slot 1, 2, 3:</strong> Carte Comuni (con possibilità di finiture speciali)</p>
+                <p>• <strong>Slot 4:</strong> Rara, Epica o Leggendaria Garantita</p>
+                <p>• <strong>Slot 5:</strong> Slot Fortunato Wildcard (50% Rara, 35% Epica, 15% Leggendaria/Mitica)</p>
+              </div>
+
+              <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 space-y-1">
+                <span className="font-bold text-emerald-400 uppercase tracking-wider block">
+                  🎨 Probabilità Varianti & Finiture (Scala con Rarità):
+                </span>
+                <p>• <strong>👑 Secret Rare (Gold + Holo Full-Art):</strong> 0.2% - 20% (Max su Mitiche)</p>
+                <p>• <strong>🎨 Full-Art a Tutto Schermo:</strong> 1.5% - 25%</p>
+                <p>• <strong>🌟 Gold Foil Laminata in Oro:</strong> 3.5% - 30%</p>
+                <p>• <strong>✨ Olografica (Holo Arcobaleno):</strong> 15% - 45%</p>
+                <p>• <strong>📜 Classica Pergamena Tattile:</strong> Restante quota</p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowRatesModal(false)}
+              className="w-full py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs uppercase"
+            >
+              Chiudi
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* STATE 1: SEALED BOOSTER PACK */}
       {packState === 'sealed' && (
@@ -136,10 +256,10 @@ export function PackOpener({ availableCards, onAddCardsToCollection }) {
             {/* Pack Brand Center */}
             <div className="text-center my-auto p-4 bg-black/40 backdrop-blur-sm rounded-xl border border-amber-400/30">
               <div className="text-2xl font-black font-serif tracking-wider text-amber-300 drop-shadow">
-                CARD CLASH
+                POCKET FANTASYA
               </div>
               <div className="text-[11px] font-bold tracking-widest uppercase text-slate-300 mt-1">
-                Custom Edition Set
+                Booster Pack Speciale
               </div>
               <div className="mt-3 inline-block px-3 py-1 bg-amber-500 text-black font-bold text-xs rounded-full">
                 5 CARTE TATTILI
@@ -148,7 +268,7 @@ export function PackOpener({ availableCards, onAddCardsToCollection }) {
 
             {/* Bottom Seal */}
             <div className="text-center text-[10px] font-sans text-slate-400 pt-2 border-t border-amber-400/30">
-              ★ Contiene carte Rare o Leggendarie ★
+              ★ Possibilità Full-Art, Holo & Gold Foil ★
             </div>
           </div>
 
@@ -211,7 +331,7 @@ export function PackOpener({ availableCards, onAddCardsToCollection }) {
                     </div>
                   ) : (
                     /* Card Back (Covered) */
-                    <div className="w-[210px] h-[305px] rounded-[18px] bg-gradient-to-br from-slate-800 to-slate-900 border-2 border-amber-500/50 shadow-xl flex flex-col items-center justify-center p-4 hover:scale-105 transition-transform group">
+                    <div className="w-[230px] h-[330px] rounded-[18px] bg-gradient-to-br from-slate-800 to-slate-900 border-2 border-amber-500/50 shadow-xl flex flex-col items-center justify-center p-4 hover:scale-105 transition-transform group">
                       <div className="w-16 h-16 rounded-full bg-amber-500/10 border border-amber-400/40 flex items-center justify-center group-hover:scale-110 transition-transform">
                         <Sparkles className="w-8 h-8 text-amber-400 animate-pulse" />
                       </div>
@@ -233,7 +353,7 @@ export function PackOpener({ availableCards, onAddCardsToCollection }) {
             <div className="mt-10 flex flex-wrap items-center justify-center gap-4 animate-fade-in">
               <div className="flex items-center gap-2 px-4 py-2 bg-emerald-950/80 border border-emerald-500/50 rounded-xl text-emerald-300 font-semibold text-sm">
                 <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                5 Carte aggiunte al tuo Album Collezione!
+                5 Carte (incluse varianti speciali) aggiunte alla tua Collezione!
               </div>
 
               <button
