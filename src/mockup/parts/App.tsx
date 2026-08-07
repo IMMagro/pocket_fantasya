@@ -1,10 +1,14 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { Icon } from '../NewUI'
 import { PackOpening } from './PackOpening'
 import { RealArena } from './RealArena'
 import { RealDeckBuilder } from './RealDeckBuilder'
 import { RealCollection } from './RealCollection'
+import { useRealCards, rarInfo, REAL_RARITY } from '../realCards'
+
+// Ordine di rarità (alto → basso) per scegliere la carta più prestigiosa
+const RARITY_RANK: Record<string, number> = { mythic: 4, legendary: 3, epic: 2, rare: 1, common: 0 }
 
 function FloatingCard({ className, rarity, name, type, power, rotation, colorTop, colorBot }: {
   className?: string
@@ -72,15 +76,16 @@ function ModeCard({ icon, title, desc, tag, accent, delay, onClick }: { icon: Re
   )
 }
 
-function RankBadge() {
+// Badge con il conteggio reale della collezione (carte pubblicate dallo Studio)
+function RankBadge({ cardCount }: { cardCount: number }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', background: 'rgba(13,17,32,0.8)', border: '1px solid rgba(240,165,0,0.2)', borderRadius: 12, backdropFilter: 'blur(10px)' }}>
       <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg, #f0a500, #d4842a)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, boxShadow: '0 0 15px rgba(240,165,0,0.4)', flexShrink: 0 }}>
-        <Icon.sword style={{ width: 18, height: 18, color: '#06080f' }} />
+        <Icon.cards style={{ width: 18, height: 18, color: '#06080f' }} />
       </div>
       <div>
-        <div className="font-cinzel" style={{ fontSize: 11, fontWeight: 700, color: '#f0a500', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Oro III</div>
-        <div style={{ fontSize: 10, color: 'rgba(232,220,200,0.5)', marginTop: 1 }}>1 204 / 1 500 PG</div>
+        <div className="font-cinzel" style={{ fontSize: 11, fontWeight: 700, color: '#f0a500', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Collezione</div>
+        <div style={{ fontSize: 10, color: 'rgba(232,220,200,0.5)', marginTop: 1 }}>{cardCount} {cardCount === 1 ? 'carta' : 'carte'}</div>
       </div>
     </div>
   )
@@ -90,6 +95,22 @@ export default function App() {
   const [activeNav, setActiveNav] = useState('home')
   const [season, setSeason] = useState(0)
   const seasons = ['Stagione delle Fiamme', 'Stagione del Ghiaccio', 'Stagione del Tuono']
+
+  // Carte reali pubblicate dallo Studio (sync live)
+  const { cards } = useRealCards()
+
+  // Carta in evidenza = la più rara della collezione (a parità, la prima)
+  const featured = useMemo(() => {
+    if (!cards.length) return null
+    return [...cards].sort((a, b) => (RARITY_RANK[b.rarity] ?? 0) - (RARITY_RANK[a.rarity] ?? 0))[0]
+  }, [cards])
+
+  // Conteggio per rarità (solo quelle presenti), dalla più rara
+  const rarityBreakdown = useMemo(() => {
+    return ['mythic', 'legendary', 'epic', 'rare', 'common']
+      .map(r => ({ r, n: cards.filter(c => c.rarity === r).length }))
+      .filter(x => x.n > 0)
+  }, [cards])
 
   useEffect(() => {
     const t = setInterval(() => setSeason(s => (s + 1) % seasons.length), 4000)
@@ -147,7 +168,7 @@ export default function App() {
           <NavBtn icon={<Icon.sword style={{ width: 14, height: 14 }} />} label="Arena" active={activeNav === 'arena'} onClick={() => setActiveNav('arena')} />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <RankBadge />
+          <RankBadge cardCount={cards.length} />
           <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg, #2d1a4a, #0d1120)', border: '2px solid rgba(240,165,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
             <Icon.wizard style={{ width: 18, height: 18, color: '#f0a500' }} />
           </div>
@@ -197,56 +218,75 @@ export default function App() {
           <ModeCard icon={<Icon.bot style={{ width: 36, height: 36, color: '#60a5fa' }} />} title="Allenamento" desc="Metti alla prova il tuo mazzo contro l'IA senza rischiare il rango." accent="#60a5fa" delay="4" onClick={() => setActiveNav('arena')} />
         </div>
         <div className="slide-up-5" style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: 16 }}>
+          {/* La tua collezione — dati reali dallo Studio */}
           <div style={{ background: 'rgba(13,17,32,0.7)', border: '1px solid rgba(240,165,0,0.12)', borderRadius: 16, padding: '20px 24px', backdropFilter: 'blur(10px)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <div className="font-cinzel" style={{ fontSize: 12, fontWeight: 700, color: '#e8dcc8', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Missioni Giornaliere</div>
-              <div style={{ fontSize: 10, color: 'rgba(240,165,0,0.7)' }}>Resetta in 14:23:10</div>
+              <div className="font-cinzel" style={{ fontSize: 12, fontWeight: 700, color: '#e8dcc8', letterSpacing: '0.08em', textTransform: 'uppercase' }}>La Tua Collezione</div>
+              <button onClick={() => setActiveNav('collection')} style={{ background: 'none', border: 'none', fontSize: 10, color: 'rgba(240,165,0,0.7)', cursor: 'pointer', fontFamily: 'Cinzel,serif', letterSpacing: '0.06em' }}>Vedi tutte →</button>
             </div>
-            {[
-              { label: 'Vinci 3 partite ranked', xp: '+150 XP', prog: 2, tot: 3, done: false },
-              { label: 'Gioca 5 carte leggendarie', xp: '+200 XP', prog: 5, tot: 5, done: true },
-              { label: 'Apri 1 pacchetto booster', xp: '+50 XP', prog: 0, tot: 1, done: false },
-            ].map((q, i) => (
-              <div key={i} style={{ marginBottom: i < 2 ? 14 : 0, opacity: q.done ? 0.5 : 1 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
-                  <div style={{ fontSize: 12, color: q.done ? 'rgba(232,220,200,0.4)' : 'rgba(232,220,200,0.8)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {q.done && <span style={{ color: '#6ee7b7' }}>✓</span>}{q.label}
-                  </div>
-                  <div style={{ fontSize: 10, color: '#f0a500', fontWeight: 600 }}>{q.xp}</div>
-                </div>
-                <div style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${(q.prog / q.tot) * 100}%`, borderRadius: 2, background: q.done ? 'linear-gradient(90deg, #6ee7b7, #34d399)' : 'linear-gradient(90deg, #f0a500, #d4842a)', transition: 'width 1s ease' }} />
-                </div>
-                <div style={{ fontSize: 9, color: 'rgba(232,220,200,0.35)', marginTop: 3 }}>{q.prog}/{q.tot}</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 18 }}>
+              <div className="font-cinzel" style={{ fontSize: 34, fontWeight: 800, color: '#f0a500', lineHeight: 1 }}>{cards.length}</div>
+              <div style={{ fontSize: 12, color: 'rgba(232,220,200,0.4)' }}>carte create</div>
+            </div>
+            {rarityBreakdown.length === 0 ? (
+              <div style={{ fontSize: 11, color: 'rgba(232,220,200,0.4)', lineHeight: 1.6 }}>
+                Non hai ancora carte. Aprile nel <strong style={{ color: '#f0a500' }}>Card Creator Studio</strong> e appariranno qui.
               </div>
-            ))}
+            ) : rarityBreakdown.map(({ r, n }, i) => {
+              const meta = rarInfo(r)
+              const pct = cards.length ? (n / cards.length) * 100 : 0
+              return (
+                <div key={r} style={{ marginBottom: i < rarityBreakdown.length - 1 ? 12 : 0 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                    <div style={{ fontSize: 11, color: meta.color, display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'Cinzel,serif' }}>
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: meta.color, boxShadow: `0 0 6px ${meta.color}` }} />
+                      {meta.label.replace(/^[^A-Za-z]+/, '')}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'rgba(232,220,200,0.7)', fontWeight: 700, fontFamily: 'Cinzel,serif' }}>{n}</div>
+                  </div>
+                  <div style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${pct}%`, borderRadius: 2, background: meta.color, transition: 'width 1s ease' }} />
+                  </div>
+                </div>
+              )
+            })}
           </div>
-          <div style={{ background: 'rgba(13,17,32,0.7)', border: '1px solid rgba(240,165,0,0.12)', borderRadius: 16, overflow: 'hidden', backdropFilter: 'blur(10px)', position: 'relative' }}>
-            <div style={{ height: 100, background: 'linear-gradient(135deg, #1a0500 0%, #3d1500 40%, #2e0a00 100%)', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-              <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at 60% 50%, rgba(240,100,0,0.3) 0%, transparent 60%)' }} />
-              <Icon.dragon style={{ width: 56, height: 56, color: '#f06000', filter: 'drop-shadow(0 0 20px rgba(240,100,0,0.8))' }} />
+
+          {/* Carta in evidenza — la carta reale più rara della collezione */}
+          <button onClick={() => setActiveNav('collection')} style={{ textAlign: 'left', background: 'rgba(13,17,32,0.7)', border: '1px solid rgba(240,165,0,0.12)', borderRadius: 16, overflow: 'hidden', backdropFilter: 'blur(10px)', position: 'relative', cursor: 'pointer', padding: 0 }}>
+            <div style={{ height: 132, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', background: `linear-gradient(135deg, ${(featured?.accentColor || '#f0a500')}22 0%, #1a0f05 60%, #0d0a05 100%)` }}>
+              <div style={{ position: 'absolute', inset: 0, background: `radial-gradient(ellipse at 60% 50%, ${(featured?.accentColor || '#f0a500')}33 0%, transparent 60%)` }} />
+              {featured?.imageUrl
+                ? <img src={featured.imageUrl} alt={featured.name} style={{ height: '100%', objectFit: 'contain', filter: 'drop-shadow(0 6px 18px rgba(0,0,0,0.6))' }} />
+                : <Icon.cards style={{ width: 52, height: 52, color: featured ? rarInfo(featured.rarity).color : '#f0a500' }} />}
               <div style={{ position: 'absolute', top: 10, left: 16, display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', background: 'rgba(240,165,0,0.85)', borderRadius: 20, fontSize: 9, color: '#06080f', fontFamily: 'Cinzel, serif', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                <Icon.fire style={{ width: 10, height: 10, color: '#06080f' }} /> Carta in Evidenza
+                <Icon.star style={{ width: 10, height: 10, color: '#06080f' }} /> Carta in Evidenza
               </div>
             </div>
             <div style={{ padding: '16px 20px' }}>
-              <div className="font-cinzel" style={{ fontSize: 14, fontWeight: 700, color: '#ffd700', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4 }}>Drago Infuocato Ancestrale</div>
-              <div style={{ fontSize: 11, color: 'rgba(232,220,200,0.55)', lineHeight: 1.5, marginBottom: 12 }}>La carta più rara della Stagione delle Fiamme. Disponibile solo fino al 15 agosto.</div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {['★ Leggendaria', '◆ Fuoco', '⚡ 12 ATK'].map((tag, i) => (
-                  <div key={i} style={{ padding: '3px 10px', borderRadius: 10, background: 'rgba(240,165,0,0.1)', border: '1px solid rgba(240,165,0,0.2)', fontSize: 9, color: 'rgba(232,220,200,0.7)' }}>{tag}</div>
-                ))}
+              <div className="font-cinzel" style={{ fontSize: 14, fontWeight: 700, color: featured ? rarInfo(featured.rarity).color : '#ffd700', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4 }}>
+                {featured?.name || 'Nessuna carta ancora'}
               </div>
+              <div style={{ fontSize: 11, color: 'rgba(232,220,200,0.55)', lineHeight: 1.5, marginBottom: 12, minHeight: 32 }}>
+                {featured ? (featured.abilityText || 'La gemma più rara della tua collezione.') : 'Crea la tua prima carta nel Card Creator Studio per vederla qui.'}
+              </div>
+              {featured && (
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <div style={{ padding: '3px 10px', borderRadius: 10, background: `${rarInfo(featured.rarity).color}1a`, border: `1px solid ${rarInfo(featured.rarity).color}44`, fontSize: 9, color: rarInfo(featured.rarity).color, fontFamily: 'Cinzel,serif' }}>{rarInfo(featured.rarity).label}</div>
+                  <div style={{ padding: '3px 10px', borderRadius: 10, background: 'rgba(240,165,0,0.1)', border: '1px solid rgba(240,165,0,0.2)', fontSize: 9, color: 'rgba(232,220,200,0.7)' }}>{String(featured.type || '').toUpperCase()}</div>
+                  {featured.type === 'CREATURA' && <div style={{ padding: '3px 10px', borderRadius: 10, background: 'rgba(240,165,0,0.1)', border: '1px solid rgba(240,165,0,0.2)', fontSize: 9, color: 'rgba(232,220,200,0.7)' }}>⚔ {featured.atk} / {featured.hp} ❤</div>}
+                </div>
+              )}
             </div>
-          </div>
+          </button>
         </div>
       </main>}
 
       {activeNav === 'home' && <footer style={{ position: 'relative', zIndex: 5, borderTop: '1px solid rgba(240,165,0,0.06)', padding: '20px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(6,8,15,0.6)', backdropFilter: 'blur(10px)' }}>
         <div style={{ fontSize: 10, color: 'rgba(232,220,200,0.3)', letterSpacing: '0.08em' }}>© 2026 Card Clash TCG — Gioco Ufficiale</div>
         <div style={{ display: 'flex', gap: 24 }}>
-          {['Supporto', 'Termini', 'Privacy', 'Studio Creatori'].map(l => (
-            <a key={l} href="#" style={{ fontSize: 10, color: 'rgba(232,220,200,0.3)', textDecoration: 'none', letterSpacing: '0.06em', transition: 'color 0.2s' }}
+          {[{ l: 'Supporto', href: '#' }, { l: 'Termini', href: '#' }, { l: 'Privacy', href: '#' }, { l: 'Studio Creatori', href: '/#creator' }].map(({ l, href }) => (
+            <a key={l} href={href} style={{ fontSize: 10, color: 'rgba(232,220,200,0.3)', textDecoration: 'none', letterSpacing: '0.06em', transition: 'color 0.2s' }}
               onMouseEnter={e => (e.currentTarget.style.color = '#f0a500')} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(232,220,200,0.3)')}>{l}</a>
           ))}
         </div>

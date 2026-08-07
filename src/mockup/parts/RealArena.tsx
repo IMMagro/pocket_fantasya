@@ -195,6 +195,7 @@ function HeroBar({ name, hp, shield, isOpponent, flash, mana, maxMana }: any) {
 
 export function RealArena() {
   const [screen, setScreen] = useState<'lobby' | 'battle'>('lobby')
+  const [lobbyMode, setLobbyMode] = useState<'menu' | 'lan'>('menu')
   const [gameState, setGameState] = useState<any>(null)
   const [selectedAttackerId, setSelectedAttackerId] = useState<string | null>(null)
   const [isAiThinking, setIsAiThinking] = useState(false)
@@ -204,20 +205,52 @@ export function RealArena() {
   const logRef = useRef<HTMLDivElement>(null)
   const prevHp = useRef({ p: 30, o: 30 })
 
-  // Carica SOLO le tue carte pubblicate dallo Studio, con sync live.
+  // ── Stato multiplayer LAN ──────────────────────────────────────────────────
+  const [isMultiplayer, setIsMultiplayer] = useState(false)
+  const [isHost, setIsHost] = useState(true)
+  const [playerName, setPlayerName] = useState('Tu')
+  const [roomId, setRoomId] = useState(() => Math.floor(1000 + Math.random() * 9000).toString())
+  const [hostIp, setHostIp] = useState('localhost:4000')
+  const [joinRoomId, setJoinRoomId] = useState('')
+  const [matchRoom, setMatchRoom] = useState('')
+  const [lanInfo, setLanInfo] = useState<any>(null)
+  const [connecting, setConnecting] = useState(false)
+  const [connError, setConnError] = useState<string | null>(null)
+  const [oppLeft, setOppLeft] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const gameSocket = useRef<any>(null)
+
+  // In solo (e come host) io sono il lato "player"; come guest sono "opponent".
+  const meIsHost = !isMultiplayer || isHost
+
+  // Carica SOLO le tue carte pubblicate dallo Studio, con sync live + info LAN.
   useEffect(() => {
     let alive = true
     fetch(SERVER_URL + '/api/cards')
       .then(r => r.json())
       .then(d => { if (alive && Array.isArray(d)) setCards(d) })
       .catch(() => {})
+    fetch(SERVER_URL + '/api/info')
+      .then(r => r.json())
+      .then(d => { if (alive && d) { setLanInfo(d); if (d.ip) setHostIp(`${d.ip}:${d.port || 4000}`) } })
+      .catch(() => {})
     const s = io(SERVER_URL)
     s.on('cards_updated', ({ cards: c }: any) => { if (alive && Array.isArray(c)) setCards(c) })
     return () => { alive = false; s.disconnect() }
   }, [])
 
+  // Chiude il socket di gioco e riporta alla lobby, resettando lo stato multiplayer.
+  const leaveMatch = () => {
+    if (gameSocket.current) { gameSocket.current.disconnect(); gameSocket.current = null }
+    setGameState(null); setScreen('lobby'); setLobbyMode('menu')
+    setIsMultiplayer(false); setIsHost(true)
+    setConnecting(false); setConnError(null); setOppLeft(false)
+    setSelectedAttackerId(null)
+  }
+
   const startSolo = () => {
     if (cards.length < 2) return
+    setIsMultiplayer(false); setIsHost(true)
     const gs = createInitialGameState(cards, cards, 'Tu', 'AI Bot Arena')
     prevHp.current = { p: 30, o: 30 }
     setGameState(gs)
@@ -225,9 +258,49 @@ export function RealArena() {
     setScreen('battle')
   }
 
-  // Turno AI
+  // Host: crea la stanza, attende l'avversario, poi genera e sincronizza lo stato.
+  const startHost = () => {
+    if (cards.length < 2) return
+    setIsMultiplayer(true); setIsHost(true); setConnecting(true); setConnError(null); setOppLeft(false)
+    setMatchRoom(roomId)
+    const s = io('http://' + hostIp.replace(/^https?:\/\//, ''))
+    gameSocket.current = s
+    s.emit('host_room', { roomId, playerName, deck: cards })
+    s.on('player_joined', ({ guest }: any) => {
+      const guestDeck = guest?.deck?.length >= 2 ? guest.deck : cards
+      const gs = createInitialGameState(cards, guestDeck, playerName, guest?.name || 'Sfidante')
+      prevHp.current = { p: 30, o: 30 }
+      s.emit('sync_game_state', { roomId, gameState: gs })
+      setGameState(gs); setSelectedAttackerId(null); setConnecting(false); setScreen('battle')
+    })
+    s.on('opponent_disconnected', () => setOppLeft(true))
+  }
+
+  // Guest: si unisce alla stanza e attende lo stato iniziale dall'host.
+  const startJoin = () => {
+    if (!joinRoomId || cards.length < 2) return
+    setIsMultiplayer(true); setIsHost(false); setConnecting(true); setConnError(null); setOppLeft(false)
+    setMatchRoom(joinRoomId)
+    const url = 'http://' + hostIp.replace(/^https?:\/\//, '')
+    const s = io(url)
+    gameSocket.current = s
+    s.emit('join_room', { roomId: joinRoomId, playerName, deck: cards })
+    s.on('join_error', ({ message }: any) => { setConnecting(false); setConnError(message || 'Connessione fallita.') })
+    s.on('game_state_synced', ({ gameState: gs }: any) => {
+      prevHp.current = { p: 30, o: 30 }
+      setGameState(gs); setSelectedAttackerId(null); setConnecting(false); setScreen('battle')
+    })
+    s.on('opponent_disconnected', () => setOppLeft(true))
+  }
+
+  const copyHostInfo = () => {
+    try { navigator.clipboard?.writeText(`Card Clash — IP: ${hostIp} · Codice Stanza: ${roomId}`) } catch {}
+    setCopied(true); soundEngine.playButtonClick(); setTimeout(() => setCopied(false), 2000)
+  }
+
+  // Turno AI — solo in modalità solitaria (mai in LAN)
   useEffect(() => {
-    if (!gameState || screen !== 'battle') return
+    if (!gameState || screen !== 'battle' || isMultiplayer) return
     if (gameState.currentTurn === 'opponent' && !gameState.winner && !isAiThinking) {
       setIsAiThinking(true)
       executeAiTurn(gameState, (s: any) => setGameState(s), (t: string) => {
@@ -237,14 +310,36 @@ export function RealArena() {
         else if (t === 'turn_end') soundEngine.playButtonClick()
       }).then(() => setIsAiThinking(false))
     }
-  }, [gameState?.currentTurn, gameState?.winner, screen])
+  }, [gameState?.currentTurn, gameState?.winner, screen, isMultiplayer])
 
-  // Flash danno eroe + autoscroll log
+  // LAN: applica le azioni dell'avversario allo stato condiviso (prospettiva invertita)
+  useEffect(() => {
+    const s = gameSocket.current
+    if (!isMultiplayer || !s) return
+    const handler = ({ action, payload }: any) => {
+      if (action === 'play_card') {
+        soundEngine.playCardPlay()
+        setGameState((prev: any) => playCard(prev, !isHost, payload.cardInstanceId, payload.targetId))
+      } else if (action === 'attack') {
+        soundEngine.playAttack()
+        setGameState((prev: any) => attackTarget(prev, !isHost, payload.attackerId, payload.targetType, payload.targetInstanceId))
+      } else if (action === 'end_turn') {
+        soundEngine.playButtonClick()
+        setGameState((prev: any) => endTurn(prev))
+      }
+    }
+    s.on('opponent_action', handler)
+    return () => { s.off('opponent_action', handler) }
+  }, [isMultiplayer, isHost, screen])
+
+  // Flash danno eroe + autoscroll log (dal punto di vista locale)
   useEffect(() => {
     if (!gameState) return
-    if (gameState.player.hp < prevHp.current.p) { setPFlash(true); setTimeout(() => setPFlash(false), 450) }
-    if (gameState.opponent.hp < prevHp.current.o) { setOFlash(true); setTimeout(() => setOFlash(false), 450) }
-    prevHp.current = { p: gameState.player.hp, o: gameState.opponent.hp }
+    const mine = meIsHost ? gameState.player : gameState.opponent
+    const foes = meIsHost ? gameState.opponent : gameState.player
+    if (mine.hp < prevHp.current.p) { setPFlash(true); setTimeout(() => setPFlash(false), 450) }
+    if (foes.hp < prevHp.current.o) { setOFlash(true); setTimeout(() => setOFlash(false), 450) }
+    prevHp.current = { p: mine.hp, o: foes.hp }
     if (logRef.current) logRef.current.scrollTop = 0
   }, [gameState])
 
@@ -256,53 +351,121 @@ export function RealArena() {
           <div className="glow-orb" style={{ position: 'absolute', left: '10%', top: '15%', width: 600, height: 600, background: 'radial-gradient(circle, rgba(240,80,20,0.14) 0%, transparent 65%)', borderRadius: '50%' }} />
           <div className="glow-orb" style={{ position: 'absolute', right: '8%', top: '25%', width: 500, height: 500, background: 'radial-gradient(circle, rgba(120,30,220,0.1) 0%, transparent 65%)', borderRadius: '50%', animationDelay: '1.5s' }} />
         </div>
-        <div style={{ animation: 'slide-up 0.55s ease both', textAlign: 'center', marginBottom: 48, position: 'relative', zIndex: 2 }}>
+        <div style={{ animation: 'slide-up 0.55s ease both', textAlign: 'center', marginBottom: 40, position: 'relative', zIndex: 2 }}>
           <div className="font-cinzel" style={{ fontSize: 10, letterSpacing: '0.5em', color: 'rgba(240,165,0,0.5)', textTransform: 'uppercase', marginBottom: 18 }}>Card Clash</div>
           <h2 className="font-cinzel-deco" style={{ fontSize: 'clamp(30px,5vw,60px)', fontWeight: 700, margin: 0, background: 'linear-gradient(135deg, #f87171 0%, #f0a500 45%, #fde68a 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', letterSpacing: '0.04em' }}>Arena di Battaglia</h2>
           <div style={{ marginTop: 12, fontSize: 13, color: 'rgba(232,220,200,0.4)' }}>Motore reale · le tue carte · abilità attive</div>
         </div>
-        <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', justifyContent: 'center', animation: 'slide-up 0.55s ease 0.12s both', position: 'relative', zIndex: 2 }}>
-          <button onClick={startSolo} disabled={cards.length < 2}
-            style={{ width: 240, padding: '28px 24px', textAlign: 'left', background: 'linear-gradient(145deg, rgba(200,60,20,0.14) 0%, rgba(13,17,32,0.95) 100%)', border: '1px solid rgba(248,113,113,0.3)', borderRadius: 16, cursor: cards.length < 2 ? 'not-allowed' : 'pointer', opacity: cards.length < 2 ? 0.55 : 1, transition: 'all 0.25s ease', position: 'relative', overflow: 'hidden' }}
-            onMouseEnter={e => { if (cards.length < 2) return; e.currentTarget.style.borderColor = 'rgba(248,113,113,0.65)'; e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 20px 60px rgba(248,113,113,0.18)' }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(248,113,113,0.3)'; e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '' }}>
-            <div style={{ width: 48, height: 48, borderRadius: 12, marginBottom: 16, background: 'linear-gradient(135deg, rgba(248,113,113,0.2), rgba(200,40,40,0.28))', border: '1px solid rgba(248,113,113,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Icon.bot style={{ width: 24, height: 24, color: '#f87171' }} />
+
+        {lobbyMode === 'menu' && (
+          <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', justifyContent: 'center', animation: 'slide-up 0.55s ease 0.12s both', position: 'relative', zIndex: 2 }}>
+            <button onClick={startSolo} disabled={cards.length < 2}
+              style={{ width: 240, padding: '28px 24px', textAlign: 'left', background: 'linear-gradient(145deg, rgba(200,60,20,0.14) 0%, rgba(13,17,32,0.95) 100%)', border: '1px solid rgba(248,113,113,0.3)', borderRadius: 16, cursor: cards.length < 2 ? 'not-allowed' : 'pointer', opacity: cards.length < 2 ? 0.55 : 1, transition: 'all 0.25s ease', position: 'relative', overflow: 'hidden' }}
+              onMouseEnter={e => { if (cards.length < 2) return; e.currentTarget.style.borderColor = 'rgba(248,113,113,0.65)'; e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 20px 60px rgba(248,113,113,0.18)' }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(248,113,113,0.3)'; e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '' }}>
+              <div style={{ width: 48, height: 48, borderRadius: 12, marginBottom: 16, background: 'linear-gradient(135deg, rgba(248,113,113,0.2), rgba(200,40,40,0.28))', border: '1px solid rgba(248,113,113,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Icon.bot style={{ width: 24, height: 24, color: '#f87171' }} />
+              </div>
+              <div className="font-cinzel" style={{ fontSize: 14, fontWeight: 700, color: '#f87171', marginBottom: 8, letterSpacing: '0.05em' }}>Sfida l'IA</div>
+              <div style={{ fontSize: 12, color: 'rgba(232,220,200,0.5)', lineHeight: 1.55, marginBottom: 18 }}>
+                {cards.length === 0
+                  ? 'Nessuna tua carta trovata. Creale nel Card Creator Studio e pubblicale.'
+                  : `Giochi con le tue ${cards.length} carte create. Abilità, GUARDIANO e spine attivi.`}
+              </div>
+              <div style={{ display: 'inline-block', padding: '4px 12px', borderRadius: 20, background: 'rgba(248,113,113,0.15)', border: '1px solid rgba(248,113,113,0.3)', fontSize: 9, color: '#f87171', fontFamily: 'Cinzel,serif', letterSpacing: '0.1em' }}>
+                {cards.length === 0 ? 'STUDIO RICHIESTO' : cards.length < 2 ? 'SERVONO ≥2 CARTE' : `${cards.length} TUE CARTE`}
+              </div>
+            </button>
+            <button onClick={() => { if (cards.length >= 2) { soundEngine.playButtonClick(); setLobbyMode('lan') } }} disabled={cards.length < 2}
+              style={{ width: 240, padding: '28px 24px', textAlign: 'left', background: 'linear-gradient(145deg, rgba(96,165,250,0.1) 0%, rgba(13,17,32,0.95) 100%)', border: '1px solid rgba(96,165,250,0.3)', borderRadius: 16, cursor: cards.length < 2 ? 'not-allowed' : 'pointer', opacity: cards.length < 2 ? 0.55 : 1, transition: 'all 0.25s ease', position: 'relative', overflow: 'hidden' }}
+              onMouseEnter={e => { if (cards.length < 2) return; e.currentTarget.style.borderColor = 'rgba(96,165,250,0.65)'; e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 20px 60px rgba(96,165,250,0.18)' }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(96,165,250,0.3)'; e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '' }}>
+              <div style={{ width: 48, height: 48, borderRadius: 12, marginBottom: 16, background: 'linear-gradient(135deg, rgba(96,165,250,0.2), rgba(40,90,200,0.28))', border: '1px solid rgba(96,165,250,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Icon.trophy style={{ width: 24, height: 24, color: '#60a5fa' }} />
+              </div>
+              <div className="font-cinzel" style={{ fontSize: 14, fontWeight: 700, color: '#60a5fa', marginBottom: 8, letterSpacing: '0.05em' }}>Sfida in rete (LAN)</div>
+              <div style={{ fontSize: 12, color: 'rgba(232,220,200,0.5)', lineHeight: 1.55, marginBottom: 18 }}>Ospita una stanza o unisciti a un collega sulla stessa rete locale. Turni in tempo reale.</div>
+              <div style={{ display: 'inline-block', padding: '4px 12px', borderRadius: 20, background: 'rgba(96,165,250,0.15)', border: '1px solid rgba(96,165,250,0.3)', fontSize: 9, color: '#60a5fa', fontFamily: 'Cinzel,serif', letterSpacing: '0.1em' }}>1 vs 1 · REALTIME</div>
+            </button>
+          </div>
+        )}
+
+        {lobbyMode === 'lan' && (
+          <div style={{ width: 'min(560px, 92vw)', animation: 'slide-up 0.45s ease both', position: 'relative', zIndex: 2, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Nome giocatore */}
+            <div style={{ background: 'rgba(13,17,32,0.85)', border: '1px solid rgba(240,165,0,0.14)', borderRadius: 14, padding: '14px 16px' }}>
+              <label className="font-cinzel" style={{ display: 'block', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(232,220,200,0.5)', marginBottom: 6 }}>Il tuo nome</label>
+              <input value={playerName} onChange={e => setPlayerName(e.target.value)}
+                style={{ width: '100%', background: '#06080f', border: '1px solid rgba(240,165,0,0.18)', borderRadius: 8, padding: '9px 12px', color: '#e8dcc8', fontSize: 13, outline: 'none' }} />
             </div>
-            <div className="font-cinzel" style={{ fontSize: 14, fontWeight: 700, color: '#f87171', marginBottom: 8, letterSpacing: '0.05em' }}>Sfida l'IA</div>
-            <div style={{ fontSize: 12, color: 'rgba(232,220,200,0.5)', lineHeight: 1.55, marginBottom: 18 }}>
-              {cards.length === 0
-                ? 'Nessuna tua carta trovata. Creale nel Card Creator Studio e pubblicale.'
-                : `Giochi con le tue ${cards.length} carte create. Abilità, GUARDIANO e spine attivi.`}
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              {/* OSPITA */}
+              <div style={{ background: 'rgba(13,17,32,0.85)', border: '1px solid rgba(240,165,0,0.16)', borderRadius: 14, padding: '16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div className="font-cinzel" style={{ fontSize: 12, fontWeight: 700, color: '#f0a500', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Ospita</div>
+                <div>
+                  <div style={{ fontSize: 9, color: 'rgba(232,220,200,0.4)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>IP del tuo server</div>
+                  <div className="font-cinzel" style={{ fontSize: 13, fontWeight: 700, color: '#e8dcc8', marginTop: 2 }}>{hostIp}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 9, color: 'rgba(232,220,200,0.4)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Codice stanza</div>
+                  <div className="font-cinzel" style={{ fontSize: 26, fontWeight: 900, color: '#fff', letterSpacing: '0.25em', marginTop: 2 }}>{roomId}</div>
+                </div>
+                <button onClick={copyHostInfo} style={{ padding: '7px', borderRadius: 8, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: copied ? '#6ee7b7' : 'rgba(232,220,200,0.6)', fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                  {copied ? <><Icon.check style={{ width: 12, height: 12 }} /> Copiato!</> : 'Copia dati per il collega'}
+                </button>
+                <button onClick={startHost} disabled={connecting}
+                  className="font-cinzel" style={{ marginTop: 'auto', padding: '11px', borderRadius: 10, background: connecting ? 'rgba(240,165,0,0.15)' : 'linear-gradient(135deg,#f0a500,#d4842a)', border: 'none', color: connecting ? '#f0a500' : '#06080f', fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: connecting ? 'default' : 'pointer' }}>
+                  {connecting && isHost ? '⏳ In attesa dell\'avversario…' : 'Crea stanza'}
+                </button>
+              </div>
+
+              {/* UNISCITI */}
+              <div style={{ background: 'rgba(13,17,32,0.85)', border: '1px solid rgba(96,165,250,0.2)', borderRadius: 14, padding: '16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div className="font-cinzel" style={{ fontSize: 12, fontWeight: 700, color: '#60a5fa', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Unisciti</div>
+                <div>
+                  <div style={{ fontSize: 9, color: 'rgba(232,220,200,0.4)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>IP del PC host</div>
+                  <input value={hostIp} onChange={e => setHostIp(e.target.value)} placeholder="192.168.1.x:4000"
+                    style={{ width: '100%', background: '#06080f', border: '1px solid rgba(96,165,250,0.25)', borderRadius: 8, padding: '8px 10px', color: '#e8dcc8', fontSize: 12, outline: 'none', fontFamily: 'Cinzel,serif' }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 9, color: 'rgba(232,220,200,0.4)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>Codice stanza</div>
+                  <input value={joinRoomId} onChange={e => setJoinRoomId(e.target.value)} placeholder="0000" maxLength={4}
+                    style={{ width: '100%', background: '#06080f', border: '1px solid rgba(96,165,250,0.25)', borderRadius: 8, padding: '8px 10px', color: '#fff', fontSize: 18, fontWeight: 800, textAlign: 'center', letterSpacing: '0.25em', outline: 'none', fontFamily: 'Cinzel,serif' }} />
+                </div>
+                {connError && <div style={{ fontSize: 10, color: '#f87171', background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.3)', borderRadius: 8, padding: '6px 8px' }}>⚠️ {connError}</div>}
+                <button onClick={startJoin} disabled={connecting || !joinRoomId}
+                  className="font-cinzel" style={{ marginTop: 'auto', padding: '11px', borderRadius: 10, background: (!joinRoomId || connecting) ? 'rgba(96,165,250,0.15)' : 'linear-gradient(135deg,#60a5fa,#3b82f6)', border: 'none', color: (!joinRoomId || connecting) ? 'rgba(96,165,250,0.6)' : '#06080f', fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: (!joinRoomId || connecting) ? 'not-allowed' : 'pointer' }}>
+                  {connecting && !isHost ? '⏳ Connessione…' : 'Collegati e gioca'}
+                </button>
+              </div>
             </div>
-            <div style={{ display: 'inline-block', padding: '4px 12px', borderRadius: 20, background: 'rgba(248,113,113,0.15)', border: '1px solid rgba(248,113,113,0.3)', fontSize: 9, color: '#f87171', fontFamily: 'Cinzel,serif', letterSpacing: '0.1em' }}>
-              {cards.length === 0 ? 'STUDIO RICHIESTO' : cards.length < 2 ? 'SERVONO ≥2 CARTE' : `${cards.length} TUE CARTE`}
-            </div>
-          </button>
-          <button style={{ width: 240, padding: '28px 24px', textAlign: 'left', background: 'linear-gradient(145deg, rgba(96,165,250,0.06) 0%, rgba(13,17,32,0.95) 100%)', border: '1px solid rgba(96,165,250,0.15)', borderRadius: 16, cursor: 'not-allowed', opacity: 0.55 }}>
-            <div style={{ width: 48, height: 48, borderRadius: 12, marginBottom: 16, background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Icon.trophy style={{ width: 24, height: 24, color: '#60a5fa' }} />
-            </div>
-            <div className="font-cinzel" style={{ fontSize: 14, fontWeight: 700, color: '#60a5fa', marginBottom: 8, letterSpacing: '0.05em' }}>Sfida LAN (Antonio)</div>
-            <div style={{ fontSize: 12, color: 'rgba(232,220,200,0.4)', lineHeight: 1.55, marginBottom: 18 }}>Partita in rete locale contro un collega. In arrivo nel prossimo step.</div>
-            <div style={{ display: 'inline-block', padding: '4px 12px', borderRadius: 20, background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.18)', fontSize: 9, color: 'rgba(96,165,250,0.5)', fontFamily: 'Cinzel,serif', letterSpacing: '0.1em' }}>PROSSIMAMENTE</div>
-          </button>
-        </div>
+
+            <button onClick={() => { setLobbyMode('menu'); setConnError(null); setConnecting(false); if (gameSocket.current) { gameSocket.current.disconnect(); gameSocket.current = null } }}
+              className="font-cinzel" style={{ alignSelf: 'center', padding: '8px 20px', borderRadius: 10, background: 'transparent', border: '1px solid rgba(240,165,0,0.25)', color: 'rgba(232,220,200,0.55)', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer' }}>← Indietro</button>
+          </div>
+        )}
       </div>
     )
   }
 
-  const p = gameState.player
-  const o = gameState.opponent
-  const isMyTurn = gameState.currentTurn === 'player'
+  const p = meIsHost ? gameState.player : gameState.opponent
+  const o = meIsHost ? gameState.opponent : gameState.player
+  const isMyTurn = meIsHost ? gameState.currentTurn === 'player' : gameState.currentTurn === 'opponent'
   const winner = gameState.winner
+  const iWon = !!winner && (meIsHost ? winner === 'player' : winner === 'opponent')
   const enemyHasTaunt = o.board.some((m: any) => m.hasTaunt)
+
+  const emitAction = (action: string, payload: any) => {
+    if (isMultiplayer && gameSocket.current) gameSocket.current.emit('game_action', { roomId: matchRoom, action, payload })
+  }
 
   const onHandClick = (card: any) => {
     if (!isMyTurn || winner || p.mana < card.cost) { if (isMyTurn && !winner) soundEngine.playDamage(); return }
     soundEngine.playCardPlay()
-    setGameState(playCard(gameState, true, card.instanceId))
+    setGameState(playCard(gameState, meIsHost, card.instanceId))
     setSelectedAttackerId(null)
+    emitAction('play_card', { cardInstanceId: card.instanceId })
   }
   const onFriendlyClick = (m: any) => {
     if (!isMyTurn || winner || !m.canAttack) return
@@ -312,7 +475,8 @@ export function RealArena() {
   const onAttack = (targetType: 'hero' | 'minion', targetId: string | null) => {
     if (!isMyTurn || !selectedAttackerId || winner) return
     soundEngine.playAttack()
-    setGameState(attackTarget(gameState, true, selectedAttackerId, targetType, targetId))
+    setGameState(attackTarget(gameState, meIsHost, selectedAttackerId, targetType, targetId))
+    emitAction('attack', { attackerId: selectedAttackerId, targetType, targetInstanceId: targetId })
     setSelectedAttackerId(null)
   }
   const onEndTurn = () => {
@@ -320,6 +484,7 @@ export function RealArena() {
     soundEngine.playButtonClick()
     setSelectedAttackerId(null)
     setGameState(endTurn(gameState))
+    emitAction('end_turn', {})
   }
 
   return (
@@ -332,14 +497,17 @@ export function RealArena() {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 2, overflow: 'hidden' }}>
         {/* Top bar */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', flexShrink: 0, background: 'rgba(6,8,15,0.85)', backdropFilter: 'blur(12px)', borderBottom: '1px solid rgba(240,165,0,0.07)' }}>
-          <button onClick={() => { setScreen('lobby'); setGameState(null) }} style={{ padding: '5px 14px', borderRadius: 8, background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.25)', color: '#f87171', cursor: 'pointer', fontSize: 10, fontFamily: 'Cinzel,serif', letterSpacing: '0.06em' }}>← Abbandona</button>
+          <button onClick={leaveMatch} style={{ padding: '5px 14px', borderRadius: 8, background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.25)', color: '#f87171', cursor: 'pointer', fontSize: 10, fontFamily: 'Cinzel,serif', letterSpacing: '0.06em' }}>← Abbandona</button>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <div className="font-cinzel" style={{ fontSize: 10, color: 'rgba(232,220,200,0.35)', letterSpacing: '0.12em' }}>TURNO {gameState.turnNumber}</div>
             <div style={{ padding: '5px 18px', borderRadius: 20, background: isMyTurn ? 'linear-gradient(135deg,rgba(96,165,250,0.2),rgba(59,130,246,0.1))' : 'linear-gradient(135deg,rgba(248,113,113,0.2),rgba(200,60,20,0.1))', border: `1px solid ${isMyTurn ? 'rgba(96,165,250,0.4)' : 'rgba(248,113,113,0.4)'}`, fontSize: 10, fontFamily: 'Cinzel,serif', fontWeight: 700, color: isMyTurn ? '#60a5fa' : '#f87171', letterSpacing: '0.08em' }}>
               {isMyTurn ? '⚔ IL TUO TURNO' : isAiThinking ? '⏳ AI PENSA…' : '⏳ AVVERSARIO'}
             </div>
           </div>
-          <div style={{ fontSize: 10, color: 'rgba(232,220,200,0.25)' }}>Mazzo: {p.deck.length}</div>
+          <div style={{ fontSize: 10, color: 'rgba(232,220,200,0.25)', display: 'flex', alignItems: 'center', gap: 10 }}>
+            {isMultiplayer && <span style={{ color: '#60a5fa', fontFamily: 'Cinzel,serif', letterSpacing: '0.1em' }}>🌐 {matchRoom}</span>}
+            <span>Mazzo: {p.deck.length}</span>
+          </div>
         </div>
 
         <HeroBar name={o.name} hp={o.hp} shield={o.shield} isOpponent flash={oFlash} />
@@ -410,21 +578,34 @@ export function RealArena() {
         </div>
       </div>
 
+      {/* Avversario disconnesso (solo LAN) */}
+      {oppLeft && !winner && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'fadeIn 0.3s ease both' }}>
+          <div style={{ textAlign: 'center' }}>
+            <div className="font-cinzel-deco" style={{ fontSize: 'clamp(30px,5vw,52px)', fontWeight: 700, color: '#f87171', marginBottom: 12 }}>Avversario disconnesso</div>
+            <div style={{ fontSize: 14, color: 'rgba(232,220,200,0.5)', marginBottom: 32 }}>Il collega ha lasciato la partita.</div>
+            <button onClick={leaveMatch} className="btn-primary font-cinzel" style={{ padding: '13px 36px', borderRadius: 12, background: 'linear-gradient(135deg,#f0a500,#d4842a)', border: 'none', color: '#06080f', fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer' }}>Torna al Menu</button>
+          </div>
+        </div>
+      )}
+
       {/* Game over */}
       {winner && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'fadeIn 0.3s ease both' }}>
           <div style={{ textAlign: 'center' }}>
-            <div className="font-cinzel-deco" style={{ fontSize: 'clamp(40px,6vw,72px)', fontWeight: 700, color: winner === 'player' ? '#ffd700' : winner === 'draw' ? '#e8dcc8' : '#f87171', textShadow: winner === 'player' ? '0 0 60px rgba(255,215,0,0.55)' : '0 0 60px rgba(248,113,113,0.45)', marginBottom: 12 }}>
-              {winner === 'player' ? 'Vittoria!' : winner === 'draw' ? 'Pareggio' : 'Sconfitta'}
+            <div className="font-cinzel-deco" style={{ fontSize: 'clamp(40px,6vw,72px)', fontWeight: 700, color: iWon ? '#ffd700' : winner === 'draw' ? '#e8dcc8' : '#f87171', textShadow: iWon ? '0 0 60px rgba(255,215,0,0.55)' : '0 0 60px rgba(248,113,113,0.45)', marginBottom: 12 }}>
+              {iWon ? 'Vittoria!' : winner === 'draw' ? 'Pareggio' : 'Sconfitta'}
             </div>
             <div style={{ fontSize: 14, color: 'rgba(232,220,200,0.5)', marginBottom: 36 }}>
-              {winner === 'player' ? "Hai annientato l'Eroe avversario!" : winner === 'draw' ? 'Entrambi gli Eroi sono caduti.' : 'I tuoi HP sono a zero. Riprova!'}
+              {iWon ? "Hai annientato l'Eroe avversario!" : winner === 'draw' ? 'Entrambi gli Eroi sono caduti.' : 'I tuoi HP sono a zero. Riprova!'}
             </div>
             <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-              <button onClick={startSolo} className="btn-primary font-cinzel" style={{ padding: '13px 36px', borderRadius: 12, background: 'linear-gradient(135deg,#f0a500,#d4842a)', border: 'none', color: '#06080f', fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer', boxShadow: '0 8px 28px rgba(240,165,0,0.4)' }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Icon.sword style={{ width: 13, height: 13 }} /> Rivincita</span>
-              </button>
-              <button onClick={() => { setScreen('lobby'); setGameState(null) }} className="font-cinzel" style={{ padding: '13px 28px', borderRadius: 12, background: 'transparent', border: '1px solid rgba(240,165,0,0.3)', color: 'rgba(232,220,200,0.6)', fontSize: 12, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}>Menu</button>
+              {!isMultiplayer && (
+                <button onClick={startSolo} className="btn-primary font-cinzel" style={{ padding: '13px 36px', borderRadius: 12, background: 'linear-gradient(135deg,#f0a500,#d4842a)', border: 'none', color: '#06080f', fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer', boxShadow: '0 8px 28px rgba(240,165,0,0.4)' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Icon.sword style={{ width: 13, height: 13 }} /> Rivincita</span>
+                </button>
+              )}
+              <button onClick={leaveMatch} className="font-cinzel" style={{ padding: '13px 28px', borderRadius: 12, background: 'transparent', border: '1px solid rgba(240,165,0,0.3)', color: 'rgba(232,220,200,0.6)', fontSize: 12, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}>Menu</button>
             </div>
           </div>
         </div>

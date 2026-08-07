@@ -1,22 +1,56 @@
 import { useState, useEffect, useRef } from 'react'
-import { CATALOG, ELEMENT_META, RARITY_META, Icon } from '../NewUI'
-import type { Card, Rarity, Element } from '../NewUI'
-import { BigCard } from '../cards'
+import { Icon } from '../NewUI'
+import { useRealCards, RealBigCard, RealCardTile, rarInfo, REAL_RARITY } from '../realCards'
 
 type PackPhase = 'select' | 'tear' | 'burst' | 'cards' | 'done'
 
 interface PackType {
   id: string; name: string; edition: string; count: number
   colorA: string; colorB: string; accent: string; tag: string
-  available: number; photo: string; elements: Element[]
+  available: number; photo: string
+  // Rarità minima garantita nel pacchetto (rango: vedi RARITY_RANK)
+  guaranteedRank: number
 }
 
+// Ordine di rarità reale (basso → alto), coerente con lo Studio / TactileCard
+const RARITY_RANK: Record<string, number> = { common: 0, rare: 1, epic: 2, legendary: 3, mythic: 4 }
+// Pesi di drop (scalabili): comuni frequenti, mitiche rarissime
+const RARITY_WEIGHT: Record<string, number> = { common: 70, rare: 22, epic: 6, legendary: 1.6, mythic: 0.4 }
+
 const PACKS: PackType[] = [
-  { id:'fire', name:'Inferno Rising', edition:'Edizione Fuoco', count:5, colorA:'#3d0800', colorB:'#7a1500', accent:'#f87171', tag:'★ Garantita Leggendaria', available:3, photo:'https://images.unsplash.com/photo-1761845086689-e90380bac227?w=600&h=900&fit=crop&auto=format', elements:['fuoco'] },
-  { id:'storm', name:'Thunder Crown', edition:'Edizione Fulmine', count:5, colorA:'#1a1200', colorB:'#3d3000', accent:'#facc15', tag:'◆ Garantita Rara+', available:1, photo:'https://images.unsplash.com/photo-1508697014387-db70aad34f4d?w=600&h=900&fit=crop&auto=format', elements:['fulmine'] },
-  { id:'void', name:'Void Shadows', edition:'Edizione Oscura', count:5, colorA:'#1a0030', colorB:'#30005a', accent:'#c084fc', tag:'★ Pack Speciale Stagione', available:5, photo:'https://images.unsplash.com/photo-1610209455607-89e8b3e0e393?w=600&h=900&fit=crop&auto=format', elements:['oscurità'] },
-  { id:'ocean', name:'Tidal Forces', edition:'Edizione Acqua', count:5, colorA:'#001530', colorB:'#003060', accent:'#60a5fa', tag:'◆ Starter Deck Set', available:2, photo:'https://images.unsplash.com/photo-1590842605059-9dc85ef1ab73?w=600&h=900&fit=crop&auto=format', elements:['acqua'] },
+  { id:'fire',  name:'Inferno Rising', edition:'Edizione Fuoco',   count:5, colorA:'#3d0800', colorB:'#7a1500', accent:'#f87171', tag:'★ Garantita Leggendaria', available:3, guaranteedRank: RARITY_RANK.legendary, photo:'https://images.unsplash.com/photo-1761845086689-e90380bac227?w=600&h=900&fit=crop&auto=format' },
+  { id:'storm', name:'Thunder Crown',  edition:'Edizione Fulmine', count:5, colorA:'#1a1200', colorB:'#3d3000', accent:'#facc15', tag:'◆ Garantita Rara+',       available:1, guaranteedRank: RARITY_RANK.rare,      photo:'https://images.unsplash.com/photo-1508697014387-db70aad34f4d?w=600&h=900&fit=crop&auto=format' },
+  { id:'void',  name:'Void Shadows',   edition:'Edizione Oscura',  count:5, colorA:'#1a0030', colorB:'#30005a', accent:'#c084fc', tag:'★ Pack Speciale Stagione', available:5, guaranteedRank: RARITY_RANK.epic,      photo:'https://images.unsplash.com/photo-1610209455607-89e8b3e0e393?w=600&h=900&fit=crop&auto=format' },
+  { id:'ocean', name:'Tidal Forces',   edition:'Edizione Acqua',   count:5, colorA:'#001530', colorB:'#003060', accent:'#60a5fa', tag:'◆ Starter Deck Set',      available:2, guaranteedRank: RARITY_RANK.rare,      photo:'https://images.unsplash.com/photo-1590842605059-9dc85ef1ab73?w=600&h=900&fit=crop&auto=format' },
 ]
+
+// Estrae una carta a caso dal pool pesando per rarità.
+function pickWeighted(pool: any[]): any {
+  if (pool.length === 0) return null
+  const total = pool.reduce((s, c) => s + (RARITY_WEIGHT[c.rarity] ?? 1), 0)
+  let r = Math.random() * total
+  for (const c of pool) {
+    r -= RARITY_WEIGHT[c.rarity] ?? 1
+    if (r <= 0) return c
+  }
+  return pool[pool.length - 1]
+}
+
+// Pesca `count` carte vere: una garantita almeno di rango `minRank`, il resto pesato.
+// Se il pool è più piccolo del pacchetto, ammette i doppioni (come un vero booster).
+function drawRealCards(pool: any[], count: number, minRank: number): any[] {
+  if (!pool || pool.length === 0) return []
+  const result: any[] = []
+  const eligible = pool.filter(c => (RARITY_RANK[c.rarity] ?? 0) >= minRank)
+  const guaranteed = pickWeighted(eligible.length ? eligible : pool)
+  if (guaranteed) result.push(guaranteed)
+  while (result.length < count) {
+    const pick = pickWeighted(pool)
+    if (pick) result.push(pick)
+    else break
+  }
+  return result.sort(() => Math.random() - 0.5)
+}
 
 function TearEdge({ accent }: { accent: string }) {
   return (
@@ -26,10 +60,17 @@ function TearEdge({ accent }: { accent: string }) {
   )
 }
 
+// Colore d'accento di una carta reale (usa il suo accentColor, o il colore della rarità)
+const cardAccent = (c: any) => (c?.accentColor || rarInfo(c?.rarity).color)
+// Le "top rarità" scatenano l'effetto celebrativo dorato
+const isTopRarity = (c: any) => c && (c.rarity === 'legendary' || c.rarity === 'mythic')
+
 export function PackOpening() {
+  const { cards: realCards, loaded } = useRealCards()
+
   const [phase, setPhase] = useState<PackPhase>('select')
   const [selectedPack, setSelectedPack] = useState<PackType>(PACKS[0])
-  const [drawnCards, setDrawnCards] = useState<Card[]>([])
+  const [drawnCards, setDrawnCards] = useState<any[]>([])
   const [currentCardIdx, setCurrentCardIdx] = useState(0)
   const [cardVisible, setCardVisible] = useState(false)
   const [showSummary, setShowSummary] = useState(false)
@@ -44,24 +85,10 @@ export function PackOpening() {
   const TEAR_THRESHOLD = 160
   const tearProgress = Math.min(1, tearY / TEAR_THRESHOLD)
 
-  const drawCards = (): Card[] => {
-    const pool = [...CATALOG]
-    const result: Card[] = []
-    const rares = pool.filter(c => c.rarity === 'leggendaria' || c.rarity === 'rara')
-    const guaranteed = rares[Math.floor(Math.random() * rares.length)]
-    result.push(guaranteed)
-    const rest = pool.filter(c => c.id !== guaranteed.id)
-    while (result.length < selectedPack.count) {
-      const pick = rest[Math.floor(Math.random() * rest.length)]
-      if (!result.find(c => c.id === pick.id)) result.push(pick)
-    }
-    return result.sort(() => Math.random() - 0.5)
-  }
-
   const triggerOpen = () => {
     setTopGone(true)
     setTimeout(() => {
-      const cards = drawCards()
+      const cards = drawRealCards(realCards, selectedPack.count, selectedPack.guaranteedRank)
       setDrawnCards(cards)
       setPhase('burst')
       setTimeout(() => {
@@ -90,8 +117,8 @@ export function PackOpening() {
   const nextCard = () => {
     if (currentCardIdx >= drawnCards.length - 1) { setShowSummary(true); return }
     setCardVisible(false)
-    const isLeg = drawnCards[currentCardIdx + 1]?.rarity === 'leggendaria'
-    if (isLeg) setLegendaryFlash(true)
+    const nextIsTop = isTopRarity(drawnCards[currentCardIdx + 1])
+    if (nextIsTop) setLegendaryFlash(true)
     setTimeout(() => {
       setCurrentCardIdx(i => i + 1)
       setCardVisible(true)
@@ -107,8 +134,10 @@ export function PackOpening() {
   const goToTear = () => { setTearY(0); setTopGone(false); setPhase('tear') }
 
   const currentCard = drawnCards[currentCardIdx]
-  const el = currentCard ? ELEMENT_META[currentCard.element] : null
-  const isLegendary = currentCard?.rarity === 'leggendaria'
+  const accent = currentCard ? cardAccent(currentCard) : selectedPack.accent
+  const isTop = isTopRarity(currentCard)
+
+  const noCards = loaded && realCards.length === 0
 
   return (
     <div style={{ height:'calc(100vh - 64px)', position:'relative', overflow:'hidden', display:'flex', flexDirection:'column' }}>
@@ -117,8 +146,8 @@ export function PackOpening() {
       )}
 
       <div style={{ position:'absolute', inset:0, zIndex:0 }}>
-        <div style={{ position:'absolute', inset:0, backgroundImage: phase === 'cards' && el ? undefined : `url(${selectedPack.photo})`, backgroundSize:'cover', backgroundPosition:'center', filter:'blur(3px) brightness(0.25)', transition:'all 0.8s ease' }} />
-        <div style={{ position:'absolute', inset:0, background: phase === 'cards' && el ? `radial-gradient(ellipse 80% 60% at 50% 30%, ${el.color}22 0%, #06080f 70%)` : `radial-gradient(ellipse 70% 50% at 50% 30%, ${selectedPack.accent}18 0%, #06080f 65%)`, transition:'background 0.8s ease' }} />
+        <div style={{ position:'absolute', inset:0, backgroundImage: phase === 'cards' ? undefined : `url(${selectedPack.photo})`, backgroundSize:'cover', backgroundPosition:'center', filter:'blur(3px) brightness(0.25)', transition:'all 0.8s ease' }} />
+        <div style={{ position:'absolute', inset:0, background: phase === 'cards' ? `radial-gradient(ellipse 80% 60% at 50% 30%, ${accent}22 0%, #06080f 70%)` : `radial-gradient(ellipse 70% 50% at 50% 30%, ${selectedPack.accent}18 0%, #06080f 65%)`, transition:'background 0.8s ease' }} />
         {Array.from({length:35}, (_,i) => (
           <div key={i} style={{ position:'absolute', left:`${(i*17.3)%100}%`, top:`${(i*13.7)%100}%`, width:i%6===0?2:1, height:i%6===0?2:1, borderRadius:'50%', background:`rgba(255,255,255,${0.08+(i%5)*0.07})` }} />
         ))}
@@ -132,7 +161,9 @@ export function PackOpening() {
             <div className="font-cinzel" style={{ fontSize:26, fontWeight:700, color:'#e8dcc8', letterSpacing:'0.08em', textTransform:'uppercase', display:'flex', alignItems:'center', justifyContent:'center', gap:12 }}>
               <Icon.package style={{ width:26, height:26, color:'#f0a500' }} /> Sbustamento Pacchetti
             </div>
-            <div style={{ fontSize:12, color:'rgba(232,220,200,0.4)', marginTop:8 }}>Scegli l'edizione e strappa il tuo pacchetto</div>
+            <div style={{ fontSize:12, color:'rgba(232,220,200,0.4)', marginTop:8 }}>
+              {noCards ? 'Nessuna carta pubblicata: creale nel Card Creator Studio' : "Scegli l'edizione e strappa il tuo pacchetto"}
+            </div>
           </div>
           <div className="slide-up-2" style={{ display:'flex', gap:20, flexWrap:'wrap', justifyContent:'center', marginBottom:44 }}>
             {PACKS.map(pack => {
@@ -163,8 +194,8 @@ export function PackOpening() {
             })}
           </div>
           <div className="slide-up-3" style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:16 }}>
-            <button className="btn-primary font-cinzel badge-pulse" onClick={goToTear}
-              style={{ padding:'18px 56px', borderRadius:14, background:`linear-gradient(135deg, ${selectedPack.accent}dd, ${selectedPack.colorB}cc)`, border:`1px solid ${selectedPack.accent}88`, color:'#06080f', fontSize:15, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', cursor:'pointer', boxShadow:`0 10px 40px ${selectedPack.accent}55, 0 4px 12px rgba(0,0,0,0.5)` }}>
+            <button className="btn-primary font-cinzel badge-pulse" onClick={goToTear} disabled={noCards}
+              style={{ padding:'18px 56px', borderRadius:14, background:`linear-gradient(135deg, ${selectedPack.accent}dd, ${selectedPack.colorB}cc)`, border:`1px solid ${selectedPack.accent}88`, color:'#06080f', fontSize:15, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', cursor: noCards ? 'not-allowed' : 'pointer', opacity: noCards ? 0.4 : 1, boxShadow:`0 10px 40px ${selectedPack.accent}55, 0 4px 12px rgba(0,0,0,0.5)` }}>
               <span style={{ display:'flex', alignItems:'center', gap:10 }}><Icon.zap style={{ width:18, height:18 }} /> Apri {selectedPack.name}</span>
             </button>
             <div style={{ fontSize:10, color:'rgba(232,220,200,0.25)' }}>{selectedPack.count} carte · {selectedPack.tag}</div>
@@ -222,27 +253,26 @@ export function PackOpening() {
       {phase === 'cards' && currentCard && !showSummary && (
         <div style={{ position:'relative', zIndex:5, flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'20px' }}>
           <div style={{ position:'absolute', top:20, left:0, right:0, display:'flex', justifyContent:'center', gap:8 }}>
-            {drawnCards.map((_,i) => {
+            {drawnCards.map((c,i) => {
               const isCurrent = i === currentCardIdx
               const isPast = i < currentCardIdx
-              const c = drawnCards[i]
               return (
-                <div key={i} style={{ width: isCurrent ? 32 : 8, height:8, borderRadius:4, background: isPast ? ELEMENT_META[c.element].color : isCurrent ? selectedPack.accent : 'rgba(255,255,255,0.12)', boxShadow: isCurrent ? `0 0 10px ${selectedPack.accent}` : 'none', transition:'all 0.3s ease' }} />
+                <div key={i} style={{ width: isCurrent ? 32 : 8, height:8, borderRadius:4, background: isPast ? cardAccent(c) : isCurrent ? selectedPack.accent : 'rgba(255,255,255,0.12)', boxShadow: isCurrent ? `0 0 10px ${selectedPack.accent}` : 'none', transition:'all 0.3s ease' }} />
               )
             })}
           </div>
-          {isLegendary && (
+          {isTop && (
             <div style={{ position:'absolute', top:50, left:0, right:0, textAlign:'center', animation:'slide-up 0.5s ease both' }}>
               <div className="font-cinzel" style={{ fontSize:13, fontWeight:700, color:'#ffd700', letterSpacing:'0.2em', textTransform:'uppercase', textShadow:'0 0 20px #ffd700', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
-                <Icon.star style={{ width:16, height:16 }} /> Carta Leggendaria! <Icon.star style={{ width:16, height:16 }} />
+                <Icon.star style={{ width:16, height:16 }} /> {rarInfo(currentCard.rarity).label.replace(/^[^A-Za-z]+/, '')}! <Icon.star style={{ width:16, height:16 }} />
               </div>
               {Array.from({length:20}, (_,i) => (
                 <div key={i} className="particle" style={{ left:`${(i*5.3)%100}%`, top:0, width:3+i%3, height:3+i%3, background:'radial-gradient(circle, #ffd700 0%, transparent 70%)', animationDuration:`${1.5 + (i%3)*0.5}s`, animationDelay:`${(i*0.1)%1}s`, bottom:'auto' }} />
               ))}
             </div>
           )}
-          <div style={{ transform: cardVisible ? 'scale(1) rotateY(0deg)' : 'scale(0.3) rotateY(90deg)', opacity: cardVisible ? 1 : 0, transition:'transform 0.5s cubic-bezier(0.34,1.56,0.64,1), opacity 0.4s ease', marginTop: isLegendary ? 30 : 0 }}>
-            <BigCard card={currentCard} />
+          <div style={{ transform: cardVisible ? 'scale(1) rotateY(0deg)' : 'scale(0.3) rotateY(90deg)', opacity: cardVisible ? 1 : 0, transition:'transform 0.5s cubic-bezier(0.34,1.56,0.64,1), opacity 0.4s ease', marginTop: isTop ? 30 : 0 }}>
+            <RealBigCard card={currentCard} />
           </div>
           <button onClick={nextCard} className="btn-primary font-cinzel"
             style={{ marginTop:28, padding:'13px 40px', borderRadius:12, background: currentCardIdx >= drawnCards.length - 1 ? 'linear-gradient(135deg,#f0a500,#d4842a)' : `linear-gradient(135deg, ${selectedPack.accent}cc, ${selectedPack.colorB}aa)`, border:'none', color:'#06080f', fontSize:12, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', cursor:'pointer', boxShadow:`0 8px 28px ${selectedPack.accent}44`, opacity: cardVisible ? 1 : 0, transition:'opacity 0.4s ease 0.3s' }}>
@@ -257,44 +287,30 @@ export function PackOpening() {
         <div style={{ position:'relative', zIndex:5, flex:1, display:'flex', flexDirection:'column', alignItems:'center', padding:'28px 24px', overflowY:'auto', animation:'slide-up 0.6s ease both' }}>
           <div className="font-cinzel" style={{ fontSize:22, fontWeight:700, color:'#e8dcc8', letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:6, textAlign:'center' }}>Pacchetto Aperto!</div>
           <div style={{ fontSize:12, color:'rgba(232,220,200,0.4)', marginBottom:28 }}>{selectedPack.name} · {selectedPack.edition}</div>
-          <div style={{ display:'flex', gap:12, marginBottom:28, flexWrap:'wrap', justifyContent:'center' }}>
-            {drawnCards.map((card, i) => {
-              const elc = ELEMENT_META[card.element]
-              const rarc = RARITY_META[card.rarity]
-              const ElIconC = elc.Icon
-              const isLeg2 = card.rarity === 'leggendaria'
-              return (
-                <div key={card.id} style={{ width:100, height:140, borderRadius:10, background:elc.bg, border:`1.5px solid ${rarc.color}${isLeg2?'cc':'55'}`, boxShadow: isLeg2 ? `0 0 20px ${elc.glow}` : `0 8px 20px rgba(0,0,0,0.5)`, position:'relative', overflow:'hidden', animation:`slide-up 0.5s ease ${i*0.1}s both` }}>
-                  {isLeg2 && <div style={{ position:'absolute', inset:0, background:'linear-gradient(135deg,rgba(255,215,0,0.08) 0%,transparent 50%)', animation:'shimmer 2s linear infinite' }} />}
-                  <div style={{ position:'absolute', inset:0, background:'linear-gradient(135deg,rgba(255,255,255,0.08) 0%,transparent 50%)' }} />
-                  <div style={{ margin:'8px 8px 0', height:58, borderRadius:6, background:`radial-gradient(ellipse at 50% 40%, ${elc.color}28 0%, rgba(0,0,0,0.5) 70%)`, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                    <ElIconC style={{ width:30, height:30, color:elc.color, opacity:0.9 }} />
-                  </div>
-                  <div className="font-cinzel" style={{ padding:'4px 6px 2px', fontSize:7.5, fontWeight:700, color:rarc.color, letterSpacing:'0.03em', textTransform:'uppercase', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{card.name}</div>
-                  <div style={{ margin:'0 6px', padding:'1px 4px', background:'rgba(0,0,0,0.4)', borderRadius:2, fontSize:6, color:'rgba(255,255,255,0.45)', letterSpacing:'0.06em', textTransform:'uppercase', display:'inline-block' }}>{card.type}</div>
-                  <div style={{ position:'absolute', bottom:5, left:6, fontSize:6, color:rarc.color }}>{rarc.label}</div>
-                  <div className="font-cinzel" style={{ position:'absolute', top:6, left:6, width:18, height:18, borderRadius:'50%', background:'linear-gradient(135deg,#3b82f6,#1d4ed8)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:7.5, fontWeight:700, color:'#fff' }}>{card.cost}</div>
-                </div>
-              )
-            })}
+          <div style={{ display:'flex', gap:14, marginBottom:28, flexWrap:'wrap', justifyContent:'center' }}>
+            {drawnCards.map((card, i) => (
+              <div key={i} style={{ animation:`slide-up 0.5s ease ${i*0.1}s both` }}>
+                <RealCardTile card={card} />
+              </div>
+            ))}
           </div>
           <div style={{ display:'flex', gap:10, marginBottom:24, flexWrap:'wrap', justifyContent:'center' }}>
-            {(['leggendaria','rara','non comune','comune'] as Rarity[]).map(r => {
+            {(['mythic','legendary','epic','rare','common']).map(r => {
               const cnt = drawnCards.filter(c => c.rarity === r).length
               if (!cnt) return null
-              const meta = RARITY_META[r]
+              const meta = REAL_RARITY[r]
               return (
                 <div key={r} style={{ padding:'10px 18px', borderRadius:12, background:`${meta.color}12`, border:`1px solid ${meta.color}44`, textAlign:'center', minWidth:70 }}>
                   <div className="font-cinzel" style={{ fontSize:20, fontWeight:700, color:meta.color }}>{cnt}</div>
-                  <div style={{ fontSize:8, color:'rgba(232,220,200,0.45)', textTransform:'uppercase', letterSpacing:'0.06em', marginTop:2 }}>{r}</div>
+                  <div style={{ fontSize:8, color:'rgba(232,220,200,0.45)', textTransform:'uppercase', letterSpacing:'0.06em', marginTop:2 }}>{meta.label.replace(/^[^A-Za-z]+/, '')}</div>
                 </div>
               )
             })}
           </div>
-          {drawnCards.some(c => c.rarity === 'leggendaria') && (
+          {drawnCards.some(c => isTopRarity(c)) && (
             <div style={{ marginBottom:20, padding:'12px 24px', background:'rgba(255,215,0,0.08)', border:'1px solid rgba(255,215,0,0.3)', borderRadius:12, textAlign:'center', animation:'badge-pulse 2s ease infinite' }}>
               <div className="font-cinzel" style={{ fontSize:12, color:'#ffd700', letterSpacing:'0.08em', display:'flex', alignItems:'center', gap:8 }}>
-                <Icon.star style={{ width:14,height:14 }} /> Carta Leggendaria Ottenuta! <Icon.star style={{ width:14,height:14 }} />
+                <Icon.star style={{ width:14,height:14 }} /> Carta Rara Ottenuta! <Icon.star style={{ width:14,height:14 }} />
               </div>
             </div>
           )}
