@@ -21,13 +21,13 @@ const REAL_RARITY: Record<string, { color: string; label: string }> = {
 const rarInfo = (r: string) => REAL_RARITY[r] || REAL_RARITY.common
 
 // ── Tile creatura sul campo con animazioni di combattimento ───────────────────
-function BoardMinion({ minion, side, selectable, isSelected, isTarget, isAttacking, attackDir, hasSlash, hasSpell, floatingText, onClick }: any) {
+function BoardMinion({ minion, side, selectable, isSelected, isTarget, isAttacking, attackDir, hasSlash, hasSpell, floatingText, onInspect, onClick }: any) {
   const [hov, setHov] = useState(false)
   const lowHp = minion.currentHp < minion.hp * 0.4
   const animClass = isAttacking ? (attackDir === 'up' ? 'anim-attack-up' : 'anim-attack-down') : ''
 
   return (
-    <div onClick={onClick} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} title={minion.abilityText}
+    <div onClick={onClick} onMouseEnter={() => { setHov(true); onInspect && onInspect(minion) }} onMouseLeave={() => { setHov(false); onInspect && onInspect(null) }} title={minion.abilityText}
       className={animClass}
       style={{
         width: 104, height: 142, borderRadius: 12,
@@ -130,24 +130,37 @@ function BoardMinion({ minion, side, selectable, isSelected, isTarget, isAttacki
 }
 
 // ── Carta in mano ─────────────────────────────────────────────────────────────
-function HandCard({ card, effectiveCost, isDiscounted, affordable, onClick }: any) {
+function HandCard({ card, effectiveCost, isDiscounted, affordable, index = 0, total = 1, onInspect, onClick }: any) {
   const [hov, setHov] = useState(false)
   const isCreature = card.type === 'CREATURA'
   const displayCost = effectiveCost !== undefined ? effectiveCost : card.cost
 
+  // Disposizione a ventaglio: rotazione e leggero abbassamento agli estremi.
+  const mid = (total - 1) / 2
+  const fanAngle = total > 1 ? (index - mid) * 4 : 0
+  const fanLift = Math.abs(index - mid) * 5
+
   return (
-    <div onClick={onClick} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} title={card.abilityText}
+    <div
+      onClick={onClick}
+      onMouseEnter={() => { setHov(true); onInspect && onInspect(card) }}
+      onMouseLeave={() => { setHov(false); onInspect && onInspect(null) }}
       style={{
         width: 114, height: 162, borderRadius: 14, flexShrink: 0,
+        marginLeft: index === 0 ? 0 : -20,
+        transformOrigin: 'bottom center',
         backgroundColor: '#FAF7EE',
         backgroundImage: 'linear-gradient(180deg, #FAF7EE 0%, #F5F1E6 100%)',
         border: `1.5px solid ${affordable ? (hov ? '#f0a500' : isDiscounted ? '#f59e0b' : '#6C8D88') : 'rgba(0,0,0,0.12)'}`,
         position: 'relative', overflow: 'hidden',
         cursor: affordable ? 'pointer' : 'not-allowed',
         transition: 'all 0.2s cubic-bezier(0.34,1.56,0.64,1)',
-        transform: hov && affordable ? 'translateY(-16px) scale(1.08)' : 'none',
-        boxShadow: hov && affordable ? `0 0 20px rgba(240,165,0,0.4), 0 16px 32px rgba(0,0,0,0.4)` : `0 4px 12px rgba(0,0,0,0.25)`,
-        filter: affordable ? 'none' : 'brightness(0.7) grayscale(0.4)',
+        transform: hov
+          ? 'translateY(-38px) rotate(0deg) scale(1.28)'
+          : `translateY(${fanLift}px) rotate(${fanAngle}deg)`,
+        zIndex: hov ? 60 : index,
+        boxShadow: hov ? `0 0 24px rgba(240,165,0,0.45), 0 22px 40px rgba(0,0,0,0.55)` : `0 4px 12px rgba(0,0,0,0.25)`,
+        filter: affordable ? 'none' : 'brightness(0.72) grayscale(0.35)',
         color: '#192523',
       }}>
       {/* Hanging Ribbon (Gold/Amber if discounted) */}
@@ -288,6 +301,12 @@ export function RealArena() {
   const [turnBanner, setTurnBanner] = useState<{ text: string; isPlayer: boolean } | null>(null)
   const prevTurn = useRef<string | null>(null)
 
+  // ── Pannello di lettura/anteprima carta (a sinistra) ───────────────────────
+  const [inspectCard, setInspectCard] = useState<any>(null)          // carta sotto il mouse
+  const [summonPreview, setSummonPreview] = useState<any>(null)      // carta appena evocata (2.5s)
+  const prevBoardIds = useRef<Set<string>>(new Set())
+  const summonTimer = useRef<any>(null)
+
   // ── Stato multiplayer LAN ──────────────────────────────────────────────────
   const [isMultiplayer, setIsMultiplayer] = useState(false)
   const [isHost, setIsHost] = useState(true)
@@ -382,6 +401,24 @@ export function RealArena() {
     }
     return () => { soundEngine.stopBattleMusic() }
   }, [screen])
+
+  // Rileva le evocazioni (nuove creature in campo, da entrambi i lati) e mostra
+  // l'anteprima della carta a sinistra per ~2.5 secondi.
+  useEffect(() => {
+    if (screen !== 'battle' || !gameState) { prevBoardIds.current = new Set(); return }
+    const board = [...(gameState.player?.board || []), ...(gameState.opponent?.board || [])]
+    const ids = new Set<string>(board.map((m: any) => m.instanceId))
+    let summoned: any = null
+    for (const m of board) {
+      if (!prevBoardIds.current.has(m.instanceId)) summoned = m
+    }
+    prevBoardIds.current = ids
+    if (summoned) {
+      setSummonPreview(summoned)
+      if (summonTimer.current) clearTimeout(summonTimer.current)
+      summonTimer.current = setTimeout(() => setSummonPreview(null), 2500)
+    }
+  }, [gameState, screen])
 
   // Monitora lo stato di tensione (Low HP) e la fine della partita (Vittoria/Sconfitta)
   useEffect(() => {
@@ -665,6 +702,10 @@ export function RealArena() {
   const winner = gameState.winner
   const iWon = !!winner && (meIsHost ? winner === 'player' : winner === 'opponent')
   const enemyHasTaunt = o.board.some((m: any) => m.hasTaunt)
+  // L'Eroe avversario è colpibile solo se non ci sono creature nemiche in campo
+  const canHitFace = o.board.length === 0
+  // Carta da mostrare nel pannello a sinistra: evocazione recente ha priorità sull'hover
+  const previewCard = summonPreview || inspectCard
 
   const emitAction = (action: string, payload: any) => {
     if (isMultiplayer && gameSocket.current) gameSocket.current.emit('game_action', { roomId: matchRoom, action, payload })
@@ -750,8 +791,47 @@ export function RealArena() {
       {/* Sfondo Arena */}
       <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0 }}>
         <div style={{ position: 'absolute', inset: 0, background: `radial-gradient(ellipse 130% 45% at 50% 0%, rgba(200,50,15,0.2) 0%, transparent 55%), radial-gradient(ellipse 130% 45% at 50% 100%, rgba(20,60,200,0.13) 0%, transparent 55%), linear-gradient(180deg, rgba(50,10,5,0.4) 0%, rgba(6,8,15,0.96) 25%, rgba(6,8,15,0.96) 75%, rgba(5,12,50,0.4) 100%)` }} />
-        <div style={{ position: 'absolute', top: '50%', left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, rgba(240,165,0,0.4) 50%, transparent)', transform: 'translateY(-50%)' }} />
+        <div style={{ position: 'absolute', top: '50%', left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent 0%, rgba(240,165,0,0.3) 30%, rgba(240,165,0,0.5) 50%, rgba(240,165,0,0.3) 70%, transparent 100%)', transform: 'translateY(-50%)' }} />
+        <div className="glow-orb" style={{ position: 'absolute', left: '50%', top: '-5%', transform: 'translateX(-50%)', width: 700, height: 280, background: 'radial-gradient(ellipse, rgba(248,113,113,0.12) 0%, transparent 65%)', borderRadius: '50%' }} />
+        <div className="glow-orb" style={{ position: 'absolute', left: '50%', bottom: '-5%', transform: 'translateX(-50%)', width: 700, height: 280, background: 'radial-gradient(ellipse, rgba(96,165,250,0.1) 0%, transparent 65%)', borderRadius: '50%', animationDelay: '2s' }} />
+        {Array.from({ length: 22 }, (_, i) => (
+          <div key={i} style={{ position: 'absolute', left: `${(i * 23.7) % 100}%`, bottom: `${18 + (i * 11.3) % 65}%`, width: i % 4 === 0 ? 3 : 2, height: i % 4 === 0 ? 3 : 2, borderRadius: '50%', background: i % 3 === 0 ? 'rgba(240,165,0,0.55)' : i % 3 === 1 ? 'rgba(248,113,113,0.45)' : 'rgba(96,165,250,0.4)', animation: `particle-rise ${3 + (i % 5)}s ${i * 0.35}s linear infinite` }} />
+        ))}
       </div>
+
+      {/* Pannello lettura/anteprima carta (sinistra): hover o evocazione recente */}
+      {previewCard && (
+        <div key={summonPreview ? 'summon' : 'inspect'} style={{
+          position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)',
+          width: 208, zIndex: 40, pointerEvents: 'none',
+          background: 'linear-gradient(180deg, rgba(13,17,32,0.97), rgba(6,8,15,0.97))',
+          border: `1px solid ${summonPreview ? 'rgba(240,165,0,0.55)' : 'rgba(240,165,0,0.22)'}`,
+          borderRadius: 16, padding: 14,
+          boxShadow: summonPreview ? '0 0 30px rgba(240,165,0,0.25), 0 20px 50px rgba(0,0,0,0.6)' : '0 20px 50px rgba(0,0,0,0.6)',
+          animation: 'slide-up 0.25s ease both',
+        }}>
+          {summonPreview && (
+            <div className="font-cinzel" style={{ fontSize: 9, color: '#f0a500', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: 8, textAlign: 'center' }}>✦ Evocazione</div>
+          )}
+          <div style={{ height: 118, borderRadius: 10, overflow: 'hidden', background: 'rgba(255,255,255,0.03)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
+            {previewCard.imageUrl
+              ? <img src={previewCard.imageUrl} alt={previewCard.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              : <Icon.sword style={{ width: 40, height: 40, color: '#6C8D88' }} />}
+          </div>
+          <div className="font-cinzel" style={{ fontSize: 14, fontWeight: 700, color: previewCard.accentColor || rarInfo(previewCard.rarity).color, textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 6, textAlign: 'center', lineHeight: 1.15 }}>{previewCard.name}</div>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 12, marginBottom: 8, fontSize: 12, color: 'rgba(232,220,200,0.75)', fontFamily: 'Cinzel,serif', fontWeight: 700 }}>
+            <span style={{ color: '#60a5fa' }}>◈ {previewCard.cost}</span>
+            {previewCard.type === 'CREATURA' && <>
+              <span style={{ color: '#f87171' }}>⚔ {previewCard.atk}</span>
+              <span style={{ color: '#4ade80' }}>♥ {previewCard.currentHp ?? previewCard.hp}</span>
+            </>}
+          </div>
+          {previewCard.abilityTitle && (
+            <div className="font-cinzel" style={{ fontSize: 9, color: previewCard.accentColor || '#f0a500', letterSpacing: '0.08em', textTransform: 'uppercase', textAlign: 'center', marginBottom: 4 }}>{previewCard.abilityTitle}</div>
+          )}
+          <div style={{ fontSize: 11.5, color: 'rgba(232,220,200,0.8)', lineHeight: 1.5, textAlign: 'center' }}>{previewCard.abilityText || 'Nessuna abilità.'}</div>
+        </div>
+      )}
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 2, overflow: 'hidden' }}>
         {/* Top bar con controlli BGM / SFX */}
@@ -822,10 +902,10 @@ export function RealArena() {
         />
 
         {/* Campo avversario */}
-        <div onClick={() => { if (selectedAttackerId && !enemyHasTaunt) onAttack('hero', null) }}
-          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 16px', borderBottom: '1px solid rgba(240,165,0,0.05)', minHeight: 0, cursor: selectedAttackerId && !enemyHasTaunt ? 'crosshair' : 'default' }}>
+        <div onClick={() => { if (selectedAttackerId && canHitFace) onAttack('hero', null) }}
+          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 16px', borderBottom: '1px solid rgba(240,165,0,0.05)', minHeight: 0, cursor: selectedAttackerId && canHitFace ? 'crosshair' : 'default' }}>
           {o.board.length === 0 ? (
-            <div style={{ color: 'rgba(232,220,200,0.12)', fontSize: 11, border: `1px dashed ${selectedAttackerId && !enemyHasTaunt ? 'rgba(248,113,113,0.35)' : 'rgba(255,255,255,0.05)'}`, borderRadius: 12, padding: '14px 40px', background: selectedAttackerId && !enemyHasTaunt ? 'rgba(248,113,113,0.05)' : 'transparent' }}>
+            <div style={{ color: 'rgba(232,220,200,0.12)', fontSize: 11, border: `1px dashed ${selectedAttackerId && canHitFace ? 'rgba(248,113,113,0.35)' : 'rgba(255,255,255,0.05)'}`, borderRadius: 12, padding: '14px 40px', background: selectedAttackerId && canHitFace ? 'rgba(248,113,113,0.05)' : 'transparent' }}>
               {selectedAttackerId ? "Clicca qui per colpire l'Eroe!" : 'Nessuna creatura nemica'}
             </div>
           ) : (
@@ -841,6 +921,7 @@ export function RealArena() {
                   hasSlash={!!slashTargets[m.instanceId]}
                   hasSpell={!!spellTargets[m.instanceId]}
                   floatingText={floatingTexts[m.instanceId]}
+                  onInspect={setInspectCard}
                   onClick={(e: any) => { e.stopPropagation?.(); if (selectedAttackerId) onAttack('minion', m.instanceId) }}
                 />
               ))}
@@ -874,6 +955,7 @@ export function RealArena() {
                   hasSlash={!!slashTargets[m.instanceId]}
                   hasSpell={!!spellTargets[m.instanceId]}
                   floatingText={floatingTexts[m.instanceId]}
+                  onInspect={setInspectCard}
                   onClick={() => onFriendlyClick(m)}
                 />
               ))}
@@ -895,10 +977,10 @@ export function RealArena() {
           maxMana={p.maxMana}
         />
 
-        {/* Mano */}
-        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: '10px 16px 8px', flexShrink: 0, gap: 8, flexWrap: 'wrap', background: 'rgba(6,8,15,0.7)', backdropFilter: 'blur(8px)', borderTop: '1px solid rgba(240,165,0,0.06)', minHeight: 120 }}>
+        {/* Mano a ventaglio */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: '30px 16px 8px', flexShrink: 0, gap: 0, flexWrap: 'nowrap', overflow: 'visible', background: 'rgba(6,8,15,0.7)', backdropFilter: 'blur(8px)', borderTop: '1px solid rgba(240,165,0,0.06)', minHeight: 120 }}>
           {p.hand.length === 0 && <div style={{ alignSelf: 'center', fontSize: 11, color: 'rgba(232,220,200,0.15)' }}>Mano vuota</div>}
-          {p.hand.map((card: any) => {
+          {p.hand.map((card: any, i: number) => {
             const effCost = getCardEffectiveCost(card, p)
             const isDiscounted = effCost < card.cost
             const affordable = isMyTurn && !winner && p.mana >= effCost
@@ -906,6 +988,9 @@ export function RealArena() {
               <HandCard
                 key={card.instanceId}
                 card={card}
+                index={i}
+                total={p.hand.length}
+                onInspect={setInspectCard}
                 effectiveCost={effCost}
                 isDiscounted={isDiscounted}
                 affordable={affordable}

@@ -25,23 +25,24 @@ export async function executeAiTurn(gameState, onStateUpdate, onSoundTrigger) {
   for (const minion of readyMinions) {
     await new Promise(r => setTimeout(r, 700));
 
-    // Check if player has taunts
-    const playerTaunts = currentState.player.board.filter(m => m.hasTaunt);
+    const playerBoard = currentState.player.board;
+    const playerTaunts = playerBoard.filter(m => m.hasTaunt);
 
     if (playerTaunts.length > 0) {
-      // Attack highest threat or lowest HP taunt
+      // Deve colpire prima un GUARDIANO
       const targetTaunt = playerTaunts[0];
       currentState = attackTarget(currentState, false, minion.instanceId, 'minion', targetTaunt.instanceId);
       if (onSoundTrigger) onSoundTrigger('attack');
       onStateUpdate(currentState);
-    } else if (currentState.player.board.length > 0 && Math.random() < 0.45) {
-      // 45% chance to trade with minion if beneficial
-      const targetMinion = currentState.player.board[0];
+    } else if (playerBoard.length > 0) {
+      // Ci sono creature: obbligato ad affrontarle (niente attacco diretto all'Eroe).
+      // Sceglie il bersaglio con meno HP (kill) o comunque il primo disponibile.
+      const targetMinion = [...playerBoard].sort((a, b) => (a.currentHp ?? a.hp) - (b.currentHp ?? b.hp))[0];
       currentState = attackTarget(currentState, false, minion.instanceId, 'minion', targetMinion.instanceId);
       if (onSoundTrigger) onSoundTrigger('attack');
       onStateUpdate(currentState);
     } else {
-      // Go Face (Attack Hero)
+      // Campo libero: attacca l'Eroe
       currentState = attackTarget(currentState, false, minion.instanceId, 'hero');
       if (onSoundTrigger) onSoundTrigger('damage');
       onStateUpdate(currentState);

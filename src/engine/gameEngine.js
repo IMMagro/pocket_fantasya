@@ -531,6 +531,12 @@ export function attackTarget(gameState, isPlayer, attackerInstanceId, targetType
     }
   }
 
+  // Regola: non si può colpire direttamente l'Eroe finché ci sono creature nemiche in campo
+  if (targetType === 'hero' && enemy.board.length > 0) {
+    pushLog(state, `⚠️ Ci sono creature nemiche in campo: devi prima affrontarle!`, 'warning');
+    return state;
+  }
+
   attacker.canAttack = false;
   const attackerDmg = Math.max(0, attacker.atk);
 
