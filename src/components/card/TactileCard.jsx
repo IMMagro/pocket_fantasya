@@ -72,12 +72,12 @@ const SIZES = {
   sm: {
     width: 175,
     height: 250,
-    padding: '6px 9px 6px',
+    padding: '6px 8px 6px',
     borderRadius: 14,
-    ribbon: { width: 24, height: 44, left: 9, costSize: 12, glyphSize: 11, glyphMargin: 3 },
+    ribbon: { width: 22, height: 42, left: 6, costSize: 12, glyphSize: 10, glyphMargin: 3 },
     titleSize: 10.5,
     subtitleSize: 7,
-    headerPl: 25,
+    headerPl: 32,
     artHeight: 120,
     pipTile: 11,
     pipFont: 6.5,
@@ -90,12 +90,12 @@ const SIZES = {
   md: {
     width: 230,
     height: 330,
-    padding: '8px 12px 8px',
+    padding: '8px 10px 8px',
     borderRadius: 18,
-    ribbon: { width: 32, height: 56, left: 12, costSize: 17, glyphSize: 14, glyphMargin: 5 },
+    ribbon: { width: 28, height: 52, left: 8, costSize: 16, glyphSize: 13, glyphMargin: 5 },
     titleSize: 13.5,
     subtitleSize: 8.5,
-    headerPl: 34,
+    headerPl: 40,
     artHeight: 160,
     pipTile: 15,
     pipFont: 8,
@@ -108,12 +108,12 @@ const SIZES = {
   lg: {
     width: 280,
     height: 400,
-    padding: '10px 15px 9px',
+    padding: '10px 14px 9px',
     borderRadius: 20,
-    ribbon: { width: 38, height: 68, left: 14, costSize: 20, glyphSize: 17, glyphMargin: 7 },
+    ribbon: { width: 34, height: 62, left: 10, costSize: 19, glyphSize: 16, glyphMargin: 6 },
     titleSize: 16,
     subtitleSize: 10,
-    headerPl: 42,
+    headerPl: 48,
     artHeight: 200,
     pipTile: 17,
     pipFont: 9.5,
@@ -126,12 +126,12 @@ const SIZES = {
   xl: {
     width: 340,
     height: 485,
-    padding: '12px 18px 11px',
+    padding: '12px 16px 11px',
     borderRadius: 22,
-    ribbon: { width: 46, height: 82, left: 18, costSize: 25, glyphSize: 20, glyphMargin: 9 },
+    ribbon: { width: 42, height: 76, left: 12, costSize: 24, glyphSize: 19, glyphMargin: 8 },
     titleSize: 19,
     subtitleSize: 11.5,
-    headerPl: 48,
+    headerPl: 58,
     artHeight: 245,
     pipTile: 20,
     pipFont: 11.5,
@@ -142,6 +142,42 @@ const SIZES = {
     fullArtTagSize: 10.5
   }
 };
+
+// Pulisce il nome della carta rimuovendo qualsiasi etichetta di variante (es. "Mattolone · Secret Rare" -> "Mattolone")
+export function getCleanCardTitle(name) {
+  if (!name) return '';
+  return name.split(/\s*·\s*/)[0].trim();
+}
+
+// Calcolo dinamico dimensione font e spaziatura per titoli lunghi
+function getTitleLayout(name, baseSize) {
+  const text = getCleanCardTitle(name);
+  const len = text.length;
+
+  let fontSize = baseSize;
+  let letterSpacing = '-0.01em';
+  let lineHeight = 1.1;
+
+  if (len > 24) {
+    fontSize = Math.round(baseSize * 0.72 * 10) / 10;
+    letterSpacing = '-0.025em';
+    lineHeight = 1.04;
+  } else if (len > 18) {
+    fontSize = Math.round(baseSize * 0.82 * 10) / 10;
+    letterSpacing = '-0.02em';
+    lineHeight = 1.06;
+  } else if (len > 13) {
+    fontSize = Math.round(baseSize * 0.90 * 10) / 10;
+    letterSpacing = '-0.015em';
+    lineHeight = 1.08;
+  }
+
+  return {
+    fontSize,
+    letterSpacing,
+    lineHeight,
+  };
+}
 
 export function TactileCard({ 
   card, 
@@ -162,6 +198,8 @@ export function TactileCard({
   const cardRarity = card.rarity || 'common';
   const rarityInfo = RARITY_THEMES[cardRarity] || RARITY_THEMES.common;
   const isCreature = (card.type || 'CREATURA').toUpperCase() === 'CREATURA';
+  const cleanTitle = getCleanCardTitle(card.name) || 'Senza Nome';
+  const titleLayout = getTitleLayout(cleanTitle, cfg.titleSize);
 
   // Active Variant determination (forced prop or card attribute or fallback from rarity)
   const activeVariantKey = forcedVariant || card.variant || (card.isFullArt ? 'full_art' : 'standard');
@@ -275,16 +313,28 @@ export function TactileCard({
             style={{ 
               position: 'absolute', 
               top: cfg.padding.split(' ')[0] || '8px', 
-              left: 0, 
-              right: 0, 
-              paddingLeft: cfg.headerPl + 4, 
-              paddingRight: 10,
+              left: (cfg.ribbon.left + cfg.ribbon.width + 5), 
+              right: 6, 
               zIndex: 12,
-              textAlign: 'center'
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center'
             }}
           >
-            <div className="tactile-title" style={{ fontSize: cfg.titleSize, textShadow: '0 1px 4px rgba(250,247,238,0.9)' }}>
-              {card.name || 'Senza Nome'}
+            <div 
+              className="tactile-title" 
+              title={cleanTitle}
+              style={{ 
+                width: '100%',
+                fontSize: titleLayout.fontSize, 
+                letterSpacing: titleLayout.letterSpacing,
+                lineHeight: titleLayout.lineHeight,
+                textShadow: '0 1px 4px rgba(250,247,238,0.9), 0 0 10px rgba(250,247,238,0.7)' 
+              }}
+            >
+              {cleanTitle}
             </div>
             <div className="tactile-subtitle" style={{ fontSize: cfg.subtitleSize, textShadow: '0 1px 2px rgba(250,247,238,0.8)' }}>
               {isCreature 
@@ -332,7 +382,7 @@ export function TactileCard({
         /* ============================================================ */
         <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', zIndex: 10 }}>
           
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', minHeight: cfg.ribbon.height * 0.7 }}>
+          <div style={{ position: 'relative', zIndex: 6, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', minHeight: cfg.ribbon.height * 0.7 }}>
             <div 
               className="tactile-ribbon"
               style={{
@@ -354,9 +404,18 @@ export function TactileCard({
               />
             </div>
 
-            <div style={{ flex: 1, textAlign: 'right', paddingLeft: cfg.headerPl, paddingTop: 1 }}>
-              <div className="tactile-title" style={{ fontSize: cfg.titleSize }}>
-                {card.name || 'Carta'}
+            <div style={{ flex: 1, minWidth: 0, textAlign: 'right', marginLeft: (cfg.ribbon.left + cfg.ribbon.width + 5), paddingRight: 4, paddingTop: 1 }}>
+              <div 
+                className="tactile-title" 
+                title={cleanTitle}
+                style={{ 
+                  width: '100%',
+                  fontSize: titleLayout.fontSize,
+                  letterSpacing: titleLayout.letterSpacing,
+                  lineHeight: titleLayout.lineHeight,
+                }}
+              >
+                {cleanTitle}
               </div>
               <div className="tactile-subtitle" style={{ fontSize: cfg.subtitleSize }}>
                 {card.type || 'CREATURA'}
@@ -400,7 +459,7 @@ export function TactileCard({
         <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', zIndex: 10 }}>
           
           {/* Top Bar: Hanging Ribbon & Compact Title Header */}
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', minHeight: cfg.ribbon.height * 0.7 }}>
+          <div style={{ position: 'relative', zIndex: 6, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', minHeight: cfg.ribbon.height * 0.7 }}>
             <div 
               className="tactile-ribbon"
               style={{
@@ -422,9 +481,18 @@ export function TactileCard({
               />
             </div>
 
-            <div style={{ flex: 1, textAlign: 'center', paddingLeft: cfg.headerPl, paddingRight: 2, paddingTop: 1 }}>
-              <div className="tactile-title" style={{ fontSize: cfg.titleSize }}>
-                {card.name || 'Senza Nome'}
+            <div style={{ flex: 1, minWidth: 0, textAlign: 'center', marginLeft: (cfg.ribbon.left + cfg.ribbon.width + 5), paddingRight: 4, paddingTop: 1 }}>
+              <div 
+                className="tactile-title" 
+                title={cleanTitle}
+                style={{ 
+                  width: '100%',
+                  fontSize: titleLayout.fontSize,
+                  letterSpacing: titleLayout.letterSpacing,
+                  lineHeight: titleLayout.lineHeight,
+                }}
+              >
+                {cleanTitle}
               </div>
               <div className="tactile-subtitle" style={{ fontSize: cfg.subtitleSize }}>
                 {isCreature 

@@ -1,16 +1,17 @@
-import { playCard, attackTarget, endTurn } from './gameEngine';
+import { playCard, attackTarget, endTurn, getCardEffectiveCost } from './gameEngine';
 
 // AI Bot turn automation with simulated delays
 export async function executeAiTurn(gameState, onStateUpdate, onSoundTrigger) {
   let currentState = JSON.parse(JSON.stringify(gameState));
 
-  // 1. Play Cards from Hand
+  // 1. Play Cards from Hand (considering dynamic costs like Lettore CIE)
   const playableCards = currentState.opponent.hand
-    .filter(c => c.cost <= currentState.opponent.mana)
-    .sort((a, b) => b.cost - a.cost);
+    .filter(c => getCardEffectiveCost(c, currentState.opponent) <= currentState.opponent.mana)
+    .sort((a, b) => getCardEffectiveCost(b, currentState.opponent) - getCardEffectiveCost(a, currentState.opponent));
 
   for (const card of playableCards) {
-    if (currentState.opponent.mana >= card.cost) {
+    const cost = getCardEffectiveCost(card, currentState.opponent);
+    if (currentState.opponent.mana >= cost) {
       await new Promise(r => setTimeout(r, 600));
       currentState = playCard(currentState, false, card.instanceId);
       if (onSoundTrigger) onSoundTrigger('card_play');

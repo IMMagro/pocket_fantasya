@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TactileCard } from '../card/TactileCard';
 import { Swords, Shield, Heart, Zap, RotateCcw, ArrowRight, Trophy, Skull, Bot, Volume2, User } from 'lucide-react';
-import { playCard, attackTarget, endTurn } from '../../engine/gameEngine';
+import { playCard, attackTarget, endTurn, getCardEffectiveCost } from '../../engine/gameEngine';
 import { executeAiTurn } from '../../engine/aiBot';
 import { soundEngine } from '../../engine/soundEngine';
 import confetti from 'canvas-confetti';
@@ -22,6 +22,14 @@ export function GameBoard({
   const isMyTurn = isMultiplayer 
     ? (isHost ? gameState.currentTurn === 'player' : gameState.currentTurn === 'opponent')
     : gameState.currentTurn === 'player';
+
+  // Start battle music on mount, stop on unmount
+  useEffect(() => {
+    soundEngine.startBattleMusic();
+    return () => {
+      soundEngine.stopBattleMusic();
+    };
+  }, []);
 
   // Handle AI turn triggers in Solo mode
   useEffect(() => {
@@ -90,7 +98,8 @@ export function GameBoard({
     if (!isMyTurn || gameState.winner) return;
     
     const myHero = isMultiplayer && !isHost ? gameState.opponent : gameState.player;
-    if (myHero.mana < card.cost) {
+    const cost = getCardEffectiveCost(card, myHero);
+    if (myHero.mana < cost) {
       soundEngine.playDamage();
       return;
     }

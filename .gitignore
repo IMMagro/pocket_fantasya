@@ -27,3 +27,7 @@ pnpm-debug.log*
 
 # Temporary / OS
 Thumbs.db
+
+# Scratch scripts e backup del catalogo (temporanei, non versionare)
+scratch/
+server/data/*.backup.json

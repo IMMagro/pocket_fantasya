@@ -6,35 +6,61 @@ import { RealArena } from './RealArena'
 import { RealDeckBuilder } from './RealDeckBuilder'
 import { RealCollection } from './RealCollection'
 import { useRealCards, rarInfo, REAL_RARITY } from '../realCards'
+import { usePlayerEconomy, usePlayerInventory, getBaseCardKey } from '../playerState'
+import { TactileCard } from '../../components/card/TactileCard'
 
 // Ordine di rarità (alto → basso) per scegliere la carta più prestigiosa
 const RARITY_RANK: Record<string, number> = { mythic: 4, legendary: 3, epic: 2, rare: 1, common: 0 }
 
-function FloatingCard({ className, rarity, name, type, power, rotation, colorTop, colorBot }: {
+function FloatingRealCard({ 
+  card, 
+  rotation = 0, 
+  scale = 0.68, 
+  opacity = 0.6, 
+  className, 
+  style = {},
+  onClick 
+}: {
+  card: any
+  rotation?: number
+  scale?: number
+  opacity?: number
   className?: string
-  rarity: 'legendary' | 'rare' | 'common'
-  name: string; type: string; power: string; rotation: number; colorTop: string; colorBot: string
+  style?: React.CSSProperties
+  onClick?: () => void
 }) {
-  const rarityBadge = {
-    legendary: { label: '★ LEGGENDARIA', color: '#ffd700', glow: 'rgba(255,215,0,0.6)' },
-    rare:      { label: '◆ RARA',        color: '#a78bfa', glow: 'rgba(167,139,250,0.5)' },
-    common:    { label: '● COMUNE',       color: '#6ee7b7', glow: 'rgba(110,231,183,0.4)' },
-  }[rarity]
+  const [hov, setHov] = useState(false)
+  if (!card) return null
+
+  const rar = rarInfo(card.rarity)
+  const glowColor = rar.color || '#f0a500'
 
   return (
-    <div className={`card-hover ${className ?? ''}`}
-      style={{ transform: `rotate(${rotation}deg)`, width: 120, height: 170, borderRadius: 10, background: `linear-gradient(160deg, ${colorTop} 0%, ${colorBot} 100%)`, boxShadow: `0 0 30px ${rarityBadge.glow}, 0 20px 40px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.15)`, border: `1.5px solid ${rarityBadge.color}44`, position: 'relative', overflow: 'hidden', cursor: 'pointer', flexShrink: 0 }}>
-      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, rgba(255,255,255,0.12) 0%, transparent 50%, rgba(255,255,255,0.04) 100%)', pointerEvents: 'none' }} />
-      <div style={{ margin: '8px 8px 0', height: 72, borderRadius: 6, background: `radial-gradient(ellipse at 40% 30%, ${rarityBadge.color}33 0%, rgba(0,0,0,0.5) 70%)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, border: `1px solid ${rarityBadge.color}22` }}>
-        {rarity === 'legendary' ? <Icon.sword style={{ width: 32, height: 32, color: '#ffd700', opacity: 0.9 }} /> : rarity === 'rare' ? <Icon.gem style={{ width: 28, height: 28, color: '#a78bfa', opacity: 0.9 }} /> : <Icon.shield style={{ width: 28, height: 28, color: '#6ee7b7', opacity: 0.9 }} />}
-      </div>
-      <div className="font-cinzel" style={{ padding: '4px 8px 2px', fontSize: 8, fontWeight: 700, color: rarityBadge.color, letterSpacing: '0.05em', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</div>
-      <div style={{ margin: '0 8px', padding: '2px 6px', background: 'rgba(0,0,0,0.5)', borderRadius: 3, fontSize: 7, color: 'rgba(255,255,255,0.6)', letterSpacing: '0.08em' }}>{type}</div>
-      <div style={{ margin: '4px 8px', padding: '4px 6px', background: 'rgba(0,0,0,0.4)', borderRadius: 4, fontSize: 6.5, color: 'rgba(255,255,255,0.7)', lineHeight: 1.4 }}>
-        {rarity === 'legendary' ? '"Nessuno osa sfidare il suo potere."' : rarity === 'rare' ? '"La magia scorre nel suo sangue."' : '"Fedele fino alla fine."'}
-      </div>
-      <div style={{ position: 'absolute', bottom: 6, right: 8, width: 22, height: 22, borderRadius: '50%', background: rarityBadge.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, color: '#06080f', fontFamily: 'Cinzel, serif', boxShadow: `0 0 10px ${rarityBadge.glow}` }}>{power}</div>
-      <div style={{ position: 'absolute', bottom: 8, left: 8, fontSize: 6, color: rarityBadge.color, letterSpacing: '0.06em' }}>{rarityBadge.label}</div>
+    <div
+      className={className}
+      style={{
+        position: 'fixed',
+        zIndex: hov ? 25 : 1,
+        transition: 'transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease, filter 0.3s ease',
+        cursor: 'pointer',
+        transform: `rotate(${rotation}deg) scale(${hov ? scale * 1.15 : scale})`,
+        opacity: hov ? 1 : opacity,
+        filter: hov 
+          ? `drop-shadow(0 20px 45px rgba(0,0,0,0.95)) drop-shadow(0 0 25px ${glowColor})`
+          : `drop-shadow(0 12px 30px rgba(0,0,0,0.85)) drop-shadow(0 0 14px ${glowColor}66)`,
+        pointerEvents: 'auto',
+        ...style
+      }}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      onClick={onClick}
+      title={`${card.name} (${rar.label}) · Clicca per aprire la Collezione`}
+    >
+      <TactileCard 
+        card={card} 
+        size="sm" 
+        interactive={false} 
+      />
     </div>
   )
 }
@@ -76,16 +102,55 @@ function ModeCard({ icon, title, desc, tag, accent, delay, onClick }: { icon: Re
   )
 }
 
-// Badge con il conteggio reale della collezione (carte pubblicate dallo Studio)
-function RankBadge({ cardCount }: { cardCount: number }) {
+function GoldBadge({ gold, onOpenShop }: { gold: number; onOpenShop: () => void }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', background: 'rgba(13,17,32,0.8)', border: '1px solid rgba(240,165,0,0.2)', borderRadius: 12, backdropFilter: 'blur(10px)' }}>
-      <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg, #f0a500, #d4842a)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, boxShadow: '0 0 15px rgba(240,165,0,0.4)', flexShrink: 0 }}>
-        <Icon.cards style={{ width: 18, height: 18, color: '#06080f' }} />
+    <div 
+      onClick={onOpenShop}
+      title="Monete d'Oro (Clicca per aprire pacchetti)"
+      style={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        gap: 8, 
+        padding: '7px 14px', 
+        background: 'rgba(13,17,32,0.9)', 
+        border: '1px solid rgba(240,165,0,0.3)', 
+        borderRadius: 20, 
+        cursor: 'pointer',
+        boxShadow: '0 0 12px rgba(240,165,0,0.15)',
+        transition: 'all 0.2s ease',
+      }}
+      onMouseEnter={e => {
+        e.currentTarget.style.borderColor = '#f0a500'
+        e.currentTarget.style.boxShadow = '0 0 20px rgba(240,165,0,0.4)'
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.borderColor = 'rgba(240,165,0,0.3)'
+        e.currentTarget.style.boxShadow = '0 0 12px rgba(240,165,0,0.15)'
+      }}
+    >
+      <span style={{ fontSize: 16 }}>🪙</span>
+      <div>
+        <div className="font-cinzel" style={{ fontSize: 13, fontWeight: 800, color: '#f0a500', lineHeight: 1 }}>{gold}</div>
+        <div style={{ fontSize: 8, color: 'rgba(232,220,200,0.4)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Monete</div>
+      </div>
+    </div>
+  )
+}
+
+// Badge con il conteggio reale dell'Album (carte sbloccate)
+function RankBadge({ discoveredCount, totalCount, onOpenCollection }: { discoveredCount: number; totalCount: number; onOpenCollection: () => void }) {
+  return (
+    <div 
+      onClick={onOpenCollection}
+      title="Album Collezione"
+      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 14px', background: 'rgba(13,17,32,0.8)', border: '1px solid rgba(240,165,0,0.2)', borderRadius: 12, backdropFilter: 'blur(10px)', cursor: 'pointer' }}
+    >
+      <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, #f0a500, #d4842a)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, boxShadow: '0 0 10px rgba(240,165,0,0.4)', flexShrink: 0 }}>
+        <Icon.cards style={{ width: 14, height: 14, color: '#06080f' }} />
       </div>
       <div>
-        <div className="font-cinzel" style={{ fontSize: 11, fontWeight: 700, color: '#f0a500', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Collezione</div>
-        <div style={{ fontSize: 10, color: 'rgba(232,220,200,0.5)', marginTop: 1 }}>{cardCount} {cardCount === 1 ? 'carta' : 'carte'}</div>
+        <div className="font-cinzel" style={{ fontSize: 10, fontWeight: 700, color: '#f0a500', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Album</div>
+        <div style={{ fontSize: 10, color: 'rgba(232,220,200,0.6)', marginTop: 1 }}>{discoveredCount}/{totalCount} sbloccate</div>
       </div>
     </div>
   )
@@ -98,11 +163,40 @@ export default function App() {
 
   // Carte reali pubblicate dallo Studio (sync live)
   const { cards } = useRealCards()
+  const { gold } = usePlayerEconomy()
+  const { inventory } = usePlayerInventory()
+
+  // Calcolo carte base e scoperte
+  const baseGroups = useMemo(() => {
+    const keys = new Set<string>()
+    cards.forEach(c => keys.add(getBaseCardKey(c)))
+    return Array.from(keys)
+  }, [cards])
+
+  const discoveredBaseCount = useMemo(() => {
+    return baseGroups.filter(key => {
+      return cards.some(c => getBaseCardKey(c) === key && (inventory[c.id] || 0) > 0)
+    }).length
+  }, [baseGroups, cards, inventory])
 
   // Carta in evidenza = la più rara della collezione (a parità, la prima)
   const featured = useMemo(() => {
     if (!cards.length) return null
     return [...cards].sort((a, b) => (RARITY_RANK[b.rarity] ?? 0) - (RARITY_RANK[a.rarity] ?? 0))[0]
+  }, [cards])
+
+  // Carte reali per lo sfondo animato della Home (varietà di archetipi/artwork)
+  const floatingCards = useMemo(() => {
+    if (!cards.length) return []
+    const map = new Map<string, any>()
+    for (const c of cards) {
+      const k = getBaseCardKey(c)
+      if (!map.has(k)) {
+        map.set(k, c)
+      }
+    }
+    const unique = Array.from(map.values())
+    return unique.slice(0, 4)
   }, [cards])
 
   // Conteggio per rarità (solo quelle presenti), dalla più rara
@@ -135,19 +229,51 @@ export default function App() {
 
       {activeNav === 'home' && <Particles />}
 
-      {activeNav === 'home' && <>
-        <div style={{ position: 'fixed', left: '-20px', top: '20%', zIndex: 1, opacity: 0.5 }} className="float-card-2">
-          <FloatingCard rarity="rare" name="Maga Oscura" type="Evocatore • Arcano" power="7" rotation={-12} colorTop="#1a0f2e" colorBot="#2d1a4a" />
-        </div>
-        <div style={{ position: 'fixed', left: '50px', top: '55%', zIndex: 1, opacity: 0.3 }} className="float-card-3">
-          <FloatingCard rarity="common" name="Guardiano" type="Guerriero • Terra" power="4" rotation={8} colorTop="#0f1a10" colorBot="#1a2e1a" />
-        </div>
-        <div style={{ position: 'fixed', right: '-10px', top: '15%', zIndex: 1, opacity: 0.5 }} className="float-card">
-          <FloatingCard rarity="legendary" name="Drago Infuocato" type="Bestia • Fuoco" power="12" rotation={14} colorTop="#2e1000" colorBot="#4a1f00" />
-        </div>
-        <div style={{ position: 'fixed', right: '60px', top: '60%', zIndex: 1, opacity: 0.3 }} className="float-card-2">
-          <FloatingCard rarity="rare" name="Arciere Elfico" type="Arciere • Natura" power="6" rotation={-6} colorTop="#0a1e0a" colorBot="#152b15" />
-        </div>
+      {activeNav === 'home' && floatingCards.length > 0 && <>
+        {floatingCards[0] && (
+          <FloatingRealCard 
+            card={floatingCards[0]} 
+            rotation={-12} 
+            scale={0.7} 
+            opacity={0.6} 
+            className="float-card-2"
+            style={{ left: '-15px', top: '18%' }}
+            onClick={() => setActiveNav('collection')}
+          />
+        )}
+        {floatingCards[1] && (
+          <FloatingRealCard 
+            card={floatingCards[1]} 
+            rotation={8} 
+            scale={0.65} 
+            opacity={0.45} 
+            className="float-card-3"
+            style={{ left: '40px', top: '56%' }}
+            onClick={() => setActiveNav('collection')}
+          />
+        )}
+        {floatingCards[2] && (
+          <FloatingRealCard 
+            card={floatingCards[2]} 
+            rotation={14} 
+            scale={0.7} 
+            opacity={0.6} 
+            className="float-card"
+            style={{ right: '-10px', top: '14%' }}
+            onClick={() => setActiveNav('collection')}
+          />
+        )}
+        {floatingCards[3] && (
+          <FloatingRealCard 
+            card={floatingCards[3]} 
+            rotation={-7} 
+            scale={0.65} 
+            opacity={0.45} 
+            className="float-card-2"
+            style={{ right: '45px', top: '58%' }}
+            onClick={() => setActiveNav('collection')}
+          />
+        )}
       </>}
 
       <nav style={{ position: 'relative', zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 32px', height: 64, borderBottom: '1px solid rgba(240,165,0,0.08)', background: 'rgba(6,8,15,0.85)', backdropFilter: 'blur(20px)' }}>
@@ -167,10 +293,15 @@ export default function App() {
           <NavBtn icon={<Icon.cards style={{ width: 14, height: 14 }} />} label="Deck Builder" active={activeNav === 'deck'} onClick={() => setActiveNav('deck')} />
           <NavBtn icon={<Icon.sword style={{ width: 14, height: 14 }} />} label="Arena" active={activeNav === 'arena'} onClick={() => setActiveNav('arena')} />
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <RankBadge cardCount={cards.length} />
-          <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg, #2d1a4a, #0d1120)', border: '2px solid rgba(240,165,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-            <Icon.wizard style={{ width: 18, height: 18, color: '#f0a500' }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <GoldBadge gold={gold} onOpenShop={() => setActiveNav('packs')} />
+          <RankBadge 
+            discoveredCount={discoveredBaseCount} 
+            totalCount={baseGroups.length || 6} 
+            onOpenCollection={() => setActiveNav('collection')} 
+          />
+          <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'linear-gradient(135deg, #2d1a4a, #0d1120)', border: '2px solid rgba(240,165,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+            <Icon.wizard style={{ width: 16, height: 16, color: '#f0a500' }} />
           </div>
         </div>
       </nav>

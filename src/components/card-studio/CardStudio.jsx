@@ -165,7 +165,7 @@ export function CardStudio({
         ...editingCard,
         id: `${baseId}__${v.id}`,
         baseId,
-        name: `${baseName} · ${v.label}`,
+        name: baseName,
         variant: v.id,
         variantLevel: level,
         dropWeight: drops[v.id],
