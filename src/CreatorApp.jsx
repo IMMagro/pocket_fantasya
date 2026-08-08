@@ -92,6 +92,18 @@ export function CreatorApp() {
     });
   };
 
+  // Save/Upsert several cards at once (una sola sync) — usato dalla generazione varianti
+  const handleSaveMultipleCards = (newCards) => {
+    if (!Array.isArray(newCards) || newCards.length === 0) return;
+    setCards(prev => {
+      const byId = new Map(prev.map(c => [c.id, c]));
+      newCards.forEach(c => byId.set(c.id, c));
+      const updated = Array.from(byId.values());
+      syncCardsToServer(updated);
+      return updated;
+    });
+  };
+
   // Delete Card
   const handleDeleteCard = (cardId) => {
     setCards(prev => {
@@ -203,9 +215,10 @@ export function CreatorApp() {
 
       {/* Main Studio View */}
       <main className="flex-1 py-4">
-        <CardStudio 
+        <CardStudio
           cards={cards}
           onSaveCard={handleSaveCard}
+          onSaveMultipleCards={handleSaveMultipleCards}
           onDeleteCard={handleDeleteCard}
           onDeleteMultipleCards={handleDeleteMultipleCards}
           onResetAllCards={handleResetAllCards}

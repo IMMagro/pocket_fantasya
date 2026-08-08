@@ -24,19 +24,30 @@ const PACKS: PackType[] = [
   { id:'ocean', name:'Tidal Forces',   edition:'Edizione Acqua',   count:5, colorA:'#001530', colorB:'#003060', accent:'#60a5fa', tag:'◆ Starter Deck Set',      available:2, guaranteedRank: RARITY_RANK.rare,      photo:'https://images.unsplash.com/photo-1590842605059-9dc85ef1ab73?w=600&h=900&fit=crop&auto=format' },
 ]
 
-// Estrae una carta a caso dal pool pesando per rarità.
+const VARIANT_LABEL: Record<string, string> = { standard: '📜 Classica', holo: '✨ Holo', gold_foil: '🌟 Gold Foil', full_art: '🎨 Full-Art', secret_holo: '👑 Secret Rare' }
+
+// Peso di drop di una carta: se è una variante generata usa il suo dropWeight,
+// altrimenti ripiega sul peso della rarità base.
+function weightOf(c: any): number {
+  if (typeof c.dropWeight === 'number' && c.dropWeight > 0) return c.dropWeight
+  return RARITY_WEIGHT[c.rarity] ?? 1
+}
+
+// Estrae una carta a caso dal pool pesando per il peso di drop.
 function pickWeighted(pool: any[]): any {
   if (pool.length === 0) return null
-  const total = pool.reduce((s, c) => s + (RARITY_WEIGHT[c.rarity] ?? 1), 0)
+  const total = pool.reduce((s, c) => s + weightOf(c), 0)
   let r = Math.random() * total
   for (const c of pool) {
-    r -= RARITY_WEIGHT[c.rarity] ?? 1
+    r -= weightOf(c)
     if (r <= 0) return c
   }
   return pool[pool.length - 1]
 }
 
-// Pesca `count` carte vere: una garantita almeno di rango `minRank`, il resto pesato.
+// Pesca `count` carte vere dal catalogo pubblicato: una garantita almeno di rango
+// `minRank`, il resto pesato per dropWeight. Le varianti sono già carte separate
+// (finitura + boost incorporati), generate dal Card Studio.
 // Se il pool è più piccolo del pacchetto, ammette i doppioni (come un vero booster).
 function drawRealCards(pool: any[], count: number, minRank: number): any[] {
   if (!pool || pool.length === 0) return []
@@ -62,8 +73,8 @@ function TearEdge({ accent }: { accent: string }) {
 
 // Colore d'accento di una carta reale (usa il suo accentColor, o il colore della rarità)
 const cardAccent = (c: any) => (c?.accentColor || rarInfo(c?.rarity).color)
-// Le "top rarità" scatenano l'effetto celebrativo dorato
-const isTopRarity = (c: any) => c && (c.rarity === 'legendary' || c.rarity === 'mythic')
+// Le "top rarità" (o le varianti di alto livello: full-art/secret) scatenano l'effetto celebrativo dorato
+const isTopRarity = (c: any) => c && (c.rarity === 'legendary' || c.rarity === 'mythic' || (c.variantLevel ?? 0) >= 3)
 
 export function PackOpening() {
   const { cards: realCards, loaded } = useRealCards()
@@ -274,6 +285,12 @@ export function PackOpening() {
           <div style={{ transform: cardVisible ? 'scale(1) rotateY(0deg)' : 'scale(0.3) rotateY(90deg)', opacity: cardVisible ? 1 : 0, transition:'transform 0.5s cubic-bezier(0.34,1.56,0.64,1), opacity 0.4s ease', marginTop: isTop ? 30 : 0 }}>
             <RealBigCard card={currentCard} />
           </div>
+          {(currentCard.variantLevel ?? 0) > 0 && (
+            <div className="font-cinzel" style={{ marginTop: 14, padding: '5px 16px', borderRadius: 20, background: 'rgba(240,165,0,0.12)', border: '1px solid rgba(240,165,0,0.35)', fontSize: 11, color: '#f0a500', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: 8 }}>
+              {VARIANT_LABEL[currentCard.variant] || currentCard.variant}
+              <span style={{ color: '#4ade80', fontWeight: 700 }}>+{currentCard.variantLevel}/+{currentCard.variantLevel}</span>
+            </div>
+          )}
           <button onClick={nextCard} className="btn-primary font-cinzel"
             style={{ marginTop:28, padding:'13px 40px', borderRadius:12, background: currentCardIdx >= drawnCards.length - 1 ? 'linear-gradient(135deg,#f0a500,#d4842a)' : `linear-gradient(135deg, ${selectedPack.accent}cc, ${selectedPack.colorB}aa)`, border:'none', color:'#06080f', fontSize:12, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', cursor:'pointer', boxShadow:`0 8px 28px ${selectedPack.accent}44`, opacity: cardVisible ? 1 : 0, transition:'opacity 0.4s ease 0.3s' }}>
             <span style={{ display:'flex', alignItems:'center', gap:8 }}>

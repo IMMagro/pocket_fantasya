@@ -171,6 +171,17 @@ export function TactileCard({
   // Active Special Finish Shader (from variant or rarity fallback)
   const finishShaderClass = variantInfo.cssClass || (activeVariantKey === 'standard' ? rarityInfo.foil : '');
 
+  // Regolazione manuale dell'immagine (zoom + posizione) impostata nel Card Studio.
+  // Se non personalizzata (scala 1, offset 0) restiamo con lo stile CSS di default
+  // così l'effetto hover sull'artwork resta attivo.
+  const imgScale = typeof card.imageScale === 'number' ? card.imageScale : 1;
+  const imgOffsetX = typeof card.imageOffsetX === 'number' ? card.imageOffsetX : 0;
+  const imgOffsetY = typeof card.imageOffsetY === 'number' ? card.imageOffsetY : 0;
+  const hasImgAdjust = imgScale !== 1 || imgOffsetX !== 0 || imgOffsetY !== 0;
+  const imgAdjustStyle = hasImgAdjust
+    ? { transform: `translate(${imgOffsetX}%, ${imgOffsetY}%) scale(${imgScale})`, transformOrigin: 'center center' }
+    : undefined;
+
   // 3D Tilt calculations
   const handleMouseMove = (e) => {
     if (!interactive) return;
@@ -286,7 +297,7 @@ export function TactileCard({
           {/* Full-Art Bleed Character Artwork Container */}
           <div className="tactile-fullart-container">
             {card.imageUrl ? (
-              <img src={card.imageUrl} alt={card.name} className="tactile-fullart-img" />
+              <img src={card.imageUrl} alt={card.name} className="tactile-fullart-img" style={imgAdjustStyle} />
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60%' }}>
                 <Target style={{ width: 48, height: 48, color: '#6C8D88', opacity: 0.6 }} />
@@ -355,7 +366,7 @@ export function TactileCard({
 
           <div className="tactile-artwork-frame" style={{ height: cfg.artHeight }}>
             {card.imageUrl ? (
-              <img src={card.imageUrl} alt={card.name} />
+              <img src={card.imageUrl} alt={card.name} style={imgAdjustStyle} />
             ) : (
               <Target style={{ width: cfg.artHeight * 0.4, height: cfg.artHeight * 0.4, color: '#6C8D88', opacity: 0.7 }} />
             )}
@@ -429,7 +440,7 @@ export function TactileCard({
           {/* Center Illustration Zone (~50% height) */}
           <div className="tactile-artwork-frame" style={{ height: cfg.artHeight, maxHeight: cfg.artHeight }}>
             {card.imageUrl ? (
-              <img src={card.imageUrl} alt={card.name} />
+              <img src={card.imageUrl} alt={card.name} style={imgAdjustStyle} />
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                 <Target style={{ width: cfg.artHeight * 0.35, height: cfg.artHeight * 0.35, color: '#6C8D88', opacity: 0.6 }} />

@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { TactileCard, CARD_VARIANTS } from '../card/TactileCard';
-import { 
-  Sparkles, Save, Trash2, Download, Upload, Plus, Send, 
-  CheckSquare, Square, CheckCircle2, AlertCircle, Copy, Image, Wand2, Palette, Crown
+import {
+  Sparkles, Save, Trash2, Download, Upload, Plus, Send,
+  CheckSquare, Square, CheckCircle2, AlertCircle, Copy, Image, Wand2, Palette, Crown, Move, RotateCcw
 } from 'lucide-react';
 import { soundEngine } from '../../engine/soundEngine';
 
@@ -68,15 +68,22 @@ const VARIANTS_LIST = [
   { id: 'secret_holo', label: 'Secret Rare', icon: '👑', desc: 'Full-Art + Gold + Holo' }
 ];
 
-export function CardStudio({ 
-  cards = [], 
-  onSaveCard, 
-  onDeleteCard, 
+// Livello di rarità di ogni variante (0 = base). Nei pacchetti la carta esce in
+// una di queste finiture e per ogni livello ATK e HP aumentano di +1.
+const VARIANT_LEVEL = { standard: 0, holo: 1, gold_foil: 2, full_art: 3, secret_holo: 4 };
+// Pesi di drop di default quando si abilita una variante (più alta = più rara)
+const DEFAULT_VARIANT_WEIGHTS = { standard: 60, holo: 25, gold_foil: 10, full_art: 4, secret_holo: 1 };
+
+export function CardStudio({
+  cards = [],
+  onSaveCard,
+  onSaveMultipleCards,
+  onDeleteCard,
   onDeleteMultipleCards,
   onResetAllCards,
   onPublishCards,
-  onExportCards, 
-  onImportCards 
+  onExportCards,
+  onImportCards
 }) {
   const [editingCard, setEditingCard] = useState({
     id: `card_${Date.now()}`,
@@ -87,8 +94,12 @@ export function CardStudio({
     hp: 9,
     rarity: 'rare',
     variant: 'full_art',
+    variantDrops: { standard: 60, holo: 25, gold_foil: 10, full_art: 4, secret_holo: 1 },
     accentColor: '#d97706',
     imageUrl: '/illustrations/mattolone.png',
+    imageScale: 1,
+    imageOffsetX: 0,
+    imageOffsetY: 0,
     abilityTitle: 'CI SAREBBE DA FARE...',
     abilityText: 'Nascondi il portafoglio, sei il prossimo... "attitude da napoletano"',
     flavorText: 'Tecno-artigiano d\'eccellenza e maestro di chiavi inglesi.'
@@ -98,6 +109,91 @@ export function CardStudio({
   const [publishStatus, setPublishStatus] = useState(null);
   const [aiPromptSubject, setAiPromptSubject] = useState('un potente mago oscuro con tunica ricamata su pergamena antica');
   const [copiedPrompt, setCopiedPrompt] = useState(false);
+
+  // Trascinamento immagine nel riquadro di inquadratura
+  const framerRef = useRef(null);
+  const [imgDrag, setImgDrag] = useState(null);
+
+  const resetImageFraming = () => {
+    soundEngine.playButtonClick();
+    setEditingCard(prev => ({ ...prev, imageScale: 1, imageOffsetX: 0, imageOffsetY: 0 }));
+  };
+
+  // Varianti nei pacchetti: abilita/disabilita (spuntina) e imposta la percentuale
+  const toggleVariantDrop = (variantId) => {
+    soundEngine.playButtonClick();
+    setEditingCard(prev => {
+      const drops = { ...(prev.variantDrops || {}) };
+      if (drops[variantId] != null) {
+        delete drops[variantId];
+      } else {
+        drops[variantId] = DEFAULT_VARIANT_WEIGHTS[variantId] ?? 10;
+      }
+      // Deve restare abilitata almeno una variante
+      if (Object.keys(drops).length === 0) drops[variantId] = 100;
+      // Se la finitura in anteprima non è più abilitata, spostala su una valida
+      const nextVariant = drops[prev.variant] != null ? prev.variant : Object.keys(drops)[0];
+      return { ...prev, variantDrops: drops, variant: nextVariant };
+    });
+  };
+  const setVariantDropPercent = (variantId, value) => {
+    setEditingCard(prev => ({
+      ...prev,
+      variantDrops: { ...(prev.variantDrops || {}), [variantId]: Math.max(0, Math.min(100, value)) }
+    }));
+  };
+
+  // Genera nel catalogo una carta separata per ogni variante spuntata, con
+  // boost statistiche (+livello) e peso di drop = percentuale impostata.
+  // Ogni copia è modificabile singolarmente (design, immagine, testo).
+  const [variantGenStatus, setVariantGenStatus] = useState(null);
+  const generateVariantCopies = () => {
+    const drops = editingCard.variantDrops || {};
+    const enabled = VARIANTS_LIST.filter(v => drops[v.id] != null);
+    if (enabled.length === 0) { alert('Spunta almeno una variante da generare.'); return; }
+    if (!editingCard.name.trim()) { alert('Inserisci un nome per la carta!'); return; }
+
+    soundEngine.playLegendaryFanfare();
+    const baseName = editingCard.name.replace(/\s+·\s+.*$/, '').trim();
+    const baseAtk = parseInt(editingCard.atk) || 0;
+    const baseHp = parseInt(editingCard.hp) || 0;
+    const baseId = editingCard.baseId || editingCard.id || `card_${Date.now()}`;
+
+    const copies = enabled.map(v => {
+      const level = VARIANT_LEVEL[v.id] || 0;
+      return {
+        ...editingCard,
+        id: `${baseId}__${v.id}`,
+        baseId,
+        name: `${baseName} · ${v.label}`,
+        variant: v.id,
+        variantLevel: level,
+        dropWeight: drops[v.id],
+        atk: baseAtk + level,
+        hp: baseHp + level,
+      };
+    });
+
+    if (onSaveMultipleCards) onSaveMultipleCards(copies);
+    else copies.forEach(c => onSaveCard(c));
+    setVariantGenStatus({ count: copies.length });
+    setTimeout(() => setVariantGenStatus(null), 4000);
+  };
+  const onFramerPointerDown = (e) => {
+    if (!editingCard.imageUrl) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setImgDrag({ startX: e.clientX, startY: e.clientY, baseX: editingCard.imageOffsetX || 0, baseY: editingCard.imageOffsetY || 0 });
+  };
+  const onFramerPointerMove = (e) => {
+    if (!imgDrag || !framerRef.current) return;
+    const rect = framerRef.current.getBoundingClientRect();
+    const dxPct = ((e.clientX - imgDrag.startX) / rect.width) * 100;
+    const dyPct = ((e.clientY - imgDrag.startY) / rect.height) * 100;
+    const nx = Math.max(-100, Math.min(100, Math.round(imgDrag.baseX + dxPct)));
+    const ny = Math.max(-100, Math.min(100, Math.round(imgDrag.baseY + dyPct)));
+    setEditingCard(prev => ({ ...prev, imageOffsetX: nx, imageOffsetY: ny }));
+  };
+  const onFramerPointerUp = () => setImgDrag(null);
 
   const handleInputChange = (field, value) => {
     setEditingCard(prev => ({
@@ -117,8 +213,12 @@ export function CardStudio({
       hp: 4,
       rarity: 'rare',
       variant: 'standard',
+      variantDrops: { standard: 100 },
       accentColor: '#2563eb',
       imageUrl: '/illustrations/tralalero_brainrot.png',
+      imageScale: 1,
+      imageOffsetX: 0,
+      imageOffsetY: 0,
       abilityTitle: 'POTERE MISTICO',
       abilityText: 'Quando questa creatura scende in campo, genera un effetto tattico.',
       flavorText: 'Una leggenda scritta nelle cronache antiche.'
@@ -131,6 +231,9 @@ export function CardStudio({
       ...prev,
       name: preset.defaultName || prev.name,
       imageUrl: preset.url,
+      imageScale: 1,
+      imageOffsetX: 0,
+      imageOffsetY: 0,
       accentColor: preset.accentColor,
       abilityTitle: preset.defaultAbilityTitle || prev.abilityTitle,
       abilityText: preset.defaultAbility || prev.abilityText,
@@ -147,7 +250,10 @@ export function CardStudio({
     reader.onload = (uploadEvent) => {
       setEditingCard(prev => ({
         ...prev,
-        imageUrl: uploadEvent.target.result
+        imageUrl: uploadEvent.target.result,
+        imageScale: 1,
+        imageOffsetX: 0,
+        imageOffsetY: 0
       }));
     };
     reader.readAsDataURL(file);
@@ -359,6 +465,81 @@ export function CardStudio({
             </div>
           </div>
 
+          {/* SECTION: Varianti nei Pacchetti (spuntine + percentuali + boost) */}
+          <div className="bg-slate-900/80 border border-slate-700/80 p-4 rounded-xl space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                <Crown className="w-4 h-4" /> Varianti nei Pacchetti & Probabilità
+              </span>
+              <span className="text-[11px] text-slate-400">Spunta le varianti che possono uscire</span>
+            </div>
+
+            <div className="space-y-1.5">
+              {VARIANTS_LIST.map((v) => {
+                const drops = editingCard.variantDrops || {};
+                const enabled = drops[v.id] != null;
+                const level = VARIANT_LEVEL[v.id] || 0;
+                const weight = drops[v.id] ?? 0;
+                const totalW = Object.values(drops).reduce((s, w) => s + (w || 0), 0) || 1;
+                const effPct = enabled ? Math.round((weight / totalW) * 100) : 0;
+                const boostedAtk = (parseInt(editingCard.atk) || 0) + level;
+                const boostedHp = (parseInt(editingCard.hp) || 0) + level;
+                return (
+                  <div
+                    key={v.id}
+                    className={`flex items-center gap-3 p-2 rounded-lg border transition ${
+                      enabled ? 'bg-slate-950/60 border-amber-500/30' : 'bg-slate-950/30 border-slate-800'
+                    }`}
+                  >
+                    <button type="button" onClick={() => toggleVariantDrop(v.id)} className="flex-shrink-0 transition hover:scale-110">
+                      {enabled
+                        ? <CheckSquare className="w-5 h-5 text-amber-400" />
+                        : <Square className="w-5 h-5 text-slate-500" />}
+                    </button>
+                    <span className="text-base flex-shrink-0">{v.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className={`text-xs font-bold truncate ${enabled ? 'text-slate-100' : 'text-slate-500'}`}>{v.label}</div>
+                      <div className="text-[10px] text-slate-400">
+                        {level === 0
+                          ? 'Statistiche base'
+                          : <>+{level}/+{level} → <span className="text-emerald-400 font-semibold font-mono">{boostedAtk}/{boostedHp}</span></>}
+                      </div>
+                    </div>
+                    {enabled ? (
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <input
+                          type="number" min="0" max="100" value={weight}
+                          onChange={(e) => setVariantDropPercent(v.id, parseInt(e.target.value) || 0)}
+                          className="w-14 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-100 font-mono text-center focus:outline-none focus:border-amber-400"
+                        />
+                        <span className="text-[10px] text-amber-300/80 font-mono w-9 text-right">{effPct}%</span>
+                      </div>
+                    ) : (
+                      <span className="text-[10px] text-slate-600 w-[92px] text-right">disattivata</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-slate-500 leading-snug">
+              Il peso è la probabilità di drop nei pacchetti (normalizzata, a destra). Le varianti superiori sono più rare e più forti (<span className="text-emerald-400">+1/+1 per livello</span>).
+            </p>
+
+            <button
+              type="button"
+              onClick={generateVariantCopies}
+              className="w-full mt-1 py-2.5 bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 text-white font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-purple-500/20 transition hover:scale-[1.01] active:scale-[0.99]"
+            >
+              <Crown className="w-4 h-4" /> Genera Varianti nel Catalogo
+            </button>
+            {variantGenStatus && (
+              <div className="flex items-center gap-2 text-[11px] text-emerald-300 bg-emerald-950/50 border border-emerald-600/40 rounded-lg px-3 py-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                Create/aggiornate {variantGenStatus.count} carte nel catalogo. Cliccale in fondo per lavorare sul design di ognuna.
+              </div>
+            )}
+          </div>
+
           {/* Section: Choose / Upload Illustration */}
           <div className="space-y-3 bg-slate-900/60 p-4 rounded-xl border border-slate-800">
             <div className="flex items-center justify-between">
@@ -420,6 +601,81 @@ export function CardStudio({
               />
             </div>
 
+          </div>
+
+          {/* Section: Image Framing (Zoom + Position) */}
+          <div className="space-y-2.5 bg-slate-900/60 p-4 rounded-xl border border-slate-800">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                <Move className="w-4 h-4 text-emerald-400" /> Inquadratura Immagine
+              </label>
+              <button
+                type="button"
+                onClick={resetImageFraming}
+                className="flex items-center gap-1 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[11px] font-semibold border border-slate-700 transition"
+              >
+                <RotateCcw className="w-3 h-3 text-amber-400" /> Reset
+              </button>
+            </div>
+
+            <div className="flex gap-4 items-stretch">
+              {/* Draggable framing box */}
+              <div
+                ref={framerRef}
+                onPointerDown={onFramerPointerDown}
+                onPointerMove={onFramerPointerMove}
+                onPointerUp={onFramerPointerUp}
+                onPointerLeave={onFramerPointerUp}
+                className="tactile-paper"
+                style={{
+                  width: 190, height: 140, flexShrink: 0, borderRadius: 10,
+                  overflow: 'hidden', position: 'relative',
+                  cursor: editingCard.imageUrl ? (imgDrag ? 'grabbing' : 'grab') : 'default',
+                  touchAction: 'none', border: '1px solid #D1C9B8',
+                  boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.4)'
+                }}
+              >
+                {editingCard.imageUrl ? (
+                  <img
+                    src={editingCard.imageUrl}
+                    alt="anteprima inquadratura"
+                    draggable={false}
+                    style={{
+                      width: '100%', height: '100%',
+                      objectFit: 'contain', objectPosition: 'center bottom',
+                      transform: `translate(${editingCard.imageOffsetX || 0}%, ${editingCard.imageOffsetY || 0}%) scale(${editingCard.imageScale ?? 1})`,
+                      transformOrigin: 'center center',
+                      transition: imgDrag ? 'none' : 'transform 0.12s ease',
+                      userSelect: 'none', pointerEvents: 'none',
+                      filter: 'drop-shadow(0 4px 8px rgba(25,37,35,0.16))'
+                    }}
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-[11px] text-slate-500 text-center px-3">
+                    Carica o scegli un'immagine
+                  </div>
+                )}
+                {/* guida cornice */}
+                <div style={{ position: 'absolute', inset: 6, border: '1px dashed rgba(108,141,136,0.45)', borderRadius: 6, pointerEvents: 'none' }} />
+              </div>
+
+              {/* Zoom slider column */}
+              <div className="flex-1 flex flex-col justify-center gap-2">
+                <div className="flex items-center justify-between text-[11px] text-slate-400">
+                  <span className="font-semibold uppercase tracking-wider">Zoom</span>
+                  <span className="font-mono text-slate-200">{Math.round((editingCard.imageScale ?? 1) * 100)}%</span>
+                </div>
+                <input
+                  type="range" min="0.5" max="3" step="0.05"
+                  value={editingCard.imageScale ?? 1}
+                  onChange={(e) => handleInputChange('imageScale', parseFloat(e.target.value))}
+                  className="w-full accent-amber-500"
+                />
+                <p className="text-[10px] text-slate-500 leading-snug">
+                  Trascina l'immagine nel riquadro per posizionarla, usa lo slider per ingrandirla o rimpicciolirla. L'anteprima della carta si aggiorna in tempo reale.
+                </p>
+              </div>
+            </div>
           </div>
 
           {/* Form Inputs Grid */}
