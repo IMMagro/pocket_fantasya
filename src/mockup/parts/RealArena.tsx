@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { io } from 'socket.io-client'
 import { Icon } from '../NewUI'
-import { createInitialGameState, playCard, attackTarget, endTurn, getCardEffectiveCost } from '../../engine/gameEngine'
+import { createInitialGameState, playCard, attackTarget, endTurn, getCardEffectiveCost, findFusion, fuseCards } from '../../engine/gameEngine'
 import { executeAiTurn } from '../../engine/aiBot'
 import { soundEngine } from '../../engine/soundEngine'
 import { usePlayerEconomy, usePlayerInventory, applyCardLevelStats } from '../playerState'
@@ -347,6 +347,8 @@ export function RealArena({ mission }: { mission?: any } = {}) {
   const [lobbyMode, setLobbyMode] = useState<'menu' | 'host' | 'join'>('menu')
   const [gameState, setGameState] = useState<any>(null)
   const [selectedAttackerId, setSelectedAttackerId] = useState<string | null>(null)
+  const [fusionMode, setFusionMode] = useState(false)                 // modalità fusione attiva
+  const [fusionPick, setFusionPick] = useState<string[]>([])          // instanceId delle 2 creature scelte
   const [isAiThinking, setIsAiThinking] = useState(false)
   const [pFlash, setPFlash] = useState(false)
   const [oFlash, setOFlash] = useState(false)
@@ -727,6 +729,9 @@ export function RealArena({ mission }: { mission?: any } = {}) {
       } else if (action === 'end_turn') {
         soundEngine.playButtonClick()
         setGameState((prev: any) => endTurn(prev))
+      } else if (action === 'fuse') {
+        soundEngine.playMagicCast()
+        setGameState((prev: any) => fuseCards(prev, !isHost, payload.id1, payload.id2, cards))
       }
     }
     s.on('opponent_action', handler)
@@ -764,6 +769,8 @@ export function RealArena({ mission }: { mission?: any } = {}) {
   const canHitFace = o?.board ? o.board.length === 0 : false
   // Carta da mostrare nel pannello a sinistra: evocazione recente ha priorità sull'hover
   const previewCard = summonPreview || inspectCard
+  // Esistono carte fusione nel catalogo? (mostra il pulsante Fusione solo se sì)
+  const hasFusions = useMemo(() => cards.some((c: any) => Array.isArray(c.fusionMaterials) && c.fusionMaterials.length === 2), [cards])
 
   const emitAction = (action: string, payload: any) => {
     if (isMultiplayer && gameSocket.current) gameSocket.current.emit('game_action', { roomId: matchRoom, action, payload })
@@ -794,9 +801,42 @@ export function RealArena({ mission }: { mission?: any } = {}) {
   }
 
   const onFriendlyClick = (m: any) => {
-    if (!isMyTurn || winner || !m.canAttack) return
+    if (!isMyTurn || winner) return
+    // In modalità fusione, cliccare una creatura la seleziona/deseleziona come componente
+    if (fusionMode) {
+      soundEngine.playButtonClick()
+      setFusionPick(prev => {
+        if (prev.includes(m.instanceId)) return prev.filter(id => id !== m.instanceId)
+        if (prev.length >= 2) return [prev[1], m.instanceId]
+        return [...prev, m.instanceId]
+      })
+      return
+    }
+    if (!m.canAttack) return
     soundEngine.playButtonClick()
     setSelectedAttackerId(prev => prev === m.instanceId ? null : m.instanceId)
+  }
+
+  // Creatura fusione ottenibile dalla coppia selezionata (o null)
+  const pendingFusion = useMemo(() => {
+    if (!p || fusionPick.length !== 2) return null
+    const m1 = p.board.find((x: any) => x.instanceId === fusionPick[0])
+    const m2 = p.board.find((x: any) => x.instanceId === fusionPick[1])
+    if (!m1 || !m2) return null
+    return findFusion(m1, m2, cards)
+  }, [p, fusionPick, cards])
+
+  const doFuse = () => {
+    if (!pendingFusion || fusionPick.length !== 2 || !isMyTurn || winner) return
+    if (p.board.length > 5) { soundEngine.playDamage(); return }
+    soundEngine.playMagicCast()
+    triggerSpellFx('hero_player')
+    setGameState(fuseCards(gameState, meIsHost, fusionPick[0], fusionPick[1], cards))
+    setSummonPreview(pendingFusion)
+    setTimeout(() => setSummonPreview(null), 2500)
+    setFusionPick([])
+    setFusionMode(false)
+    emitAction('fuse', { id1: fusionPick[0], id2: fusionPick[1] })
   }
 
   const onAttack = (targetType: 'hero' | 'minion', targetId: string | null) => {
@@ -1133,8 +1173,27 @@ export function RealArena({ mission }: { mission?: any } = {}) {
         </div>
 
         {/* Divider + fine turno */}
-        <div style={{ display: 'flex', alignItems: 'center', padding: '7px 16px', flexShrink: 0, gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', padding: '7px 16px', flexShrink: 0, gap: 12 }}>
           <div style={{ flex: 1, height: 1, background: 'linear-gradient(90deg, transparent, rgba(240,165,0,0.2), transparent)' }} />
+          {hasFusions && (
+            <button
+              onClick={() => { soundEngine.playButtonClick(); setFusionMode(v => !v); setFusionPick([]); setSelectedAttackerId(null) }}
+              disabled={!isMyTurn || !!winner}
+              className="font-cinzel"
+              title="Seleziona 2 creature componenti per evocare la loro fusione"
+              style={{ padding: '8px 18px', borderRadius: 20, flexShrink: 0, background: fusionMode ? 'linear-gradient(135deg,#a21caf,#7e22ce)' : 'rgba(13,17,32,0.8)', border: fusionMode ? 'none' : '1px solid rgba(217,70,239,0.35)', color: fusionMode ? '#fff' : (isMyTurn && !winner ? '#e879f9' : 'rgba(232,220,200,0.2)'), cursor: isMyTurn && !winner ? 'pointer' : 'not-allowed', fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+              ⚗ {fusionMode ? 'Fusione ON' : 'Fusione'}
+            </button>
+          )}
+          {fusionMode && (
+            <button
+              onClick={doFuse}
+              disabled={!pendingFusion}
+              className="font-cinzel"
+              style={{ padding: '8px 18px', borderRadius: 20, flexShrink: 0, background: pendingFusion ? 'linear-gradient(135deg,#22c55e,#15803d)' : 'rgba(13,17,32,0.8)', border: 'none', color: pendingFusion ? '#06080f' : 'rgba(232,220,200,0.2)', cursor: pendingFusion ? 'pointer' : 'not-allowed', fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', boxShadow: pendingFusion ? '0 4px 20px rgba(34,197,94,0.35)' : 'none' }}>
+              {pendingFusion ? `Fondi → ${String(pendingFusion.name).split('·')[0].trim()}` : `Scegli 2 (${fusionPick.length}/2)`}
+            </button>
+          )}
           <button onClick={onEndTurn} disabled={!isMyTurn || isAiThinking || !!winner} className="font-cinzel"
             style={{ padding: '8px 24px', borderRadius: 20, flexShrink: 0, background: isMyTurn && !isAiThinking && !winner ? 'linear-gradient(135deg,#f0a500,#d4842a)' : 'rgba(13,17,32,0.8)', border: isMyTurn && !isAiThinking && !winner ? 'none' : '1px solid rgba(240,165,0,0.12)', color: isMyTurn && !isAiThinking && !winner ? '#06080f' : 'rgba(232,220,200,0.2)', cursor: isMyTurn && !isAiThinking && !winner ? 'pointer' : 'not-allowed', fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', boxShadow: isMyTurn && !isAiThinking && !winner ? '0 4px 20px rgba(240,165,0,0.35)' : 'none' }}>Fine Turno →</button>
           <div style={{ flex: 1, height: 1, background: 'linear-gradient(90deg, transparent, rgba(240,165,0,0.2), transparent)' }} />
@@ -1151,8 +1210,8 @@ export function RealArena({ mission }: { mission?: any } = {}) {
                   key={m.instanceId}
                   minion={m}
                   side="player"
-                  selectable={!dyingMinions[m.instanceId] && isMyTurn && m.canAttack}
-                  isSelected={selectedAttackerId === m.instanceId}
+                  selectable={!dyingMinions[m.instanceId] && isMyTurn && (fusionMode || m.canAttack)}
+                  isSelected={fusionMode ? fusionPick.includes(m.instanceId) : selectedAttackerId === m.instanceId}
                   isAttacking={animAttackerId === m.instanceId}
                   attackDir="up"
                   hasSlash={!!slashTargets[m.instanceId]}

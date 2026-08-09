@@ -650,6 +650,63 @@ export function attackTarget(gameState, isPlayer, attackerInstanceId, targetType
 }
 
 // End Turn and Start Next Turn
+// ============================================================
+// FUSIONE (stile Yu-Gi-Oh): due creature-componente sul tuo campo si fondono
+// per evocare la carta-fusione la cui ricetta (fusionMaterials) le richiede.
+// ============================================================
+const normName = (s) => String(s || '').split('·')[0].trim().toLowerCase();
+
+function fusionMatches(m1, m2, fusion) {
+  const req = (fusion.fusionMaterials || []).map(normName);
+  if (req.length !== 2) return false;
+  const have = [normName(m1.name), normName(m2.name)].sort();
+  const r = [...req].sort();
+  return r[0] === have[0] && r[1] === have[1];
+}
+
+// Trova una carta-fusione i cui componenti combaciano con le due creature.
+export function findFusion(m1, m2, fusionCards) {
+  if (!m1 || !m2) return null;
+  return (fusionCards || []).find(f => Array.isArray(f.fusionMaterials) && f.fusionMaterials.length === 2 && fusionMatches(m1, m2, f)) || null;
+}
+
+// Esegue la fusione: rimuove i due componenti (→ cimitero) ed evoca la fusione.
+export function fuseCards(gameState, isPlayer, id1, id2, fusionCards) {
+  const state = JSON.parse(JSON.stringify(gameState));
+  const active = isPlayer ? state.player : state.opponent;
+  if (id1 === id2) return state;
+  const m1 = active.board.find(m => m.instanceId === id1);
+  const m2 = active.board.find(m => m.instanceId === id2);
+  if (!m1 || !m2) return state;
+
+  const fusion = findFusion(m1, m2, fusionCards);
+  if (!fusion) return state;
+
+  // Rimuovi i componenti dal campo → cimitero
+  active.board = active.board.filter(m => m.instanceId !== id1 && m.instanceId !== id2);
+  active.graveyard.push(m1, m2);
+
+  const eff = fusion.effects || {};
+  const minion = {
+    ...fusion,
+    instanceId: `fus_${state._tokenSeq = (state._tokenSeq || 0) + 1}`,
+    currentHp: fusion.hp,
+    canAttack: false, // summoning sickness
+    hasTaunt: !!eff.taunt,
+    thorns: eff.thorns || 0,
+    hasShield: !!eff.divineShield,
+    turnTriggers: eff.turnTriggers || [],
+    deathrattle: eff.deathrattle || []
+  };
+  active.board.push(minion);
+  pushLog(state, `⚗️ FUSIONE! [${m1.name}] + [${m2.name}] evocano [${fusion.name}] (${fusion.atk}/${fusion.hp})!`, 'summon');
+
+  // Battlecry della fusione
+  applyEffects(state, isPlayer, eff.battlecry || [], minion);
+  checkWinConditions(state);
+  return state;
+}
+
 export function endTurn(gameState) {
   const state = JSON.parse(JSON.stringify(gameState));
   const isNowPlayer = state.currentTurn === 'opponent';

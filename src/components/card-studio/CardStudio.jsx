@@ -150,6 +150,7 @@ export function CardStudio({
       battlecry: [],
       deathrattle: []
     },
+    fusionMaterials: [],
     accentColor: '#d97706',
     imageUrl: '/illustrations/mattolone.png',
     imageScale: 1,
@@ -312,6 +313,7 @@ export function CardStudio({
         battlecry: [],
         deathrattle: []
       },
+      fusionMaterials: [],
       accentColor: '#2563eb',
       imageUrl: '/illustrations/tralalero_brainrot.png',
       imageScale: 1,
@@ -1190,6 +1192,52 @@ export function CardStudio({
               </div>
             </div>
 
+          </div>
+
+          {/* Editor Fusione (Fase G — stile Yu-Gi-Oh) */}
+          <div className="bg-gradient-to-br from-[#160f22] via-[#1a1327] to-[#201430] p-4 md:p-5 rounded-2xl border border-fuchsia-700/50 shadow-2xl space-y-3">
+            <div className="text-xs font-black uppercase tracking-wider text-fuchsia-300 flex items-center gap-2">
+              ⚗️ Carta Fusione
+              <span className="text-[10px] font-normal text-slate-400 normal-case">
+                Definisce 2 componenti: se il giocatore ha entrambe le creature in campo può fonderle per evocare questa carta.
+              </span>
+            </div>
+            <label className="flex items-center gap-2 text-xs text-slate-200 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={(editingCard.fusionMaterials || []).length === 2}
+                onChange={(e) => {
+                  handleInputChange('fusionMaterials', e.target.checked ? ['', ''] : []);
+                }}
+              />
+              Questa è una carta fusione
+            </label>
+            {(editingCard.fusionMaterials || []).length === 2 && (
+              <div className="flex flex-wrap items-center gap-2">
+                {[0, 1].map(mi => (
+                  <select
+                    key={mi}
+                    value={editingCard.fusionMaterials[mi] || ''}
+                    onChange={(e) => {
+                      const mats = [...(editingCard.fusionMaterials || ['', ''])];
+                      mats[mi] = e.target.value;
+                      handleInputChange('fusionMaterials', mats);
+                    }}
+                    className="bg-slate-800 text-xs p-2 rounded border border-fuchsia-600/50 text-slate-200 max-w-[200px]"
+                  >
+                    <option value="">-- Componente {mi + 1} --</option>
+                    {Array.from(new Map(cards.map(c => [String(c.name || '').split('·')[0].trim(), c])).values())
+                      .map(c => {
+                        const base = String(c.name || '').split('·')[0].trim();
+                        return <option key={c.id} value={base}>{base}</option>;
+                      })}
+                  </select>
+                ))}
+                <span className="text-[10px] text-fuchsia-300/70">
+                  I componenti sono confrontati per nome base (senza variante).
+                </span>
+              </div>
+            )}
           </div>
 
           {/* ═════════════════════════════════════════════════════════════════════════ */}
