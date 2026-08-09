@@ -11,6 +11,8 @@ export async function executeAiTurn(gameState, onStateUpdate, onSoundTrigger) {
 
   for (const card of playableCards) {
     const cost = getCardEffectiveCost(card, currentState.opponent);
+    // Rispetta il limite di 5 creature in campo
+    if (card.type === 'CREATURA' && currentState.opponent.board.length >= 5) continue;
     if (currentState.opponent.mana >= cost) {
       await new Promise(r => setTimeout(r, 600));
       currentState = playCard(currentState, false, card.instanceId);

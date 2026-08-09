@@ -245,8 +245,8 @@ export function CardStudio({
         variant: v.id,
         variantLevel: level,
         dropWeight: drops[v.id],
-        atk: baseAtk + level,
-        hp: baseHp + level,
+        atk: baseAtk,
+        hp: baseHp,
       };
     });
 
@@ -585,8 +585,6 @@ export function CardStudio({
                 const weight = drops[v.id] ?? 0;
                 const totalW = Object.values(drops).reduce((s, w) => s + (w || 0), 0) || 1;
                 const effPct = enabled ? Math.round((weight / totalW) * 100) : 0;
-                const boostedAtk = (parseInt(editingCard.atk) || 0) + level;
-                const boostedHp = (parseInt(editingCard.hp) || 0) + level;
                 return (
                   <div
                     key={v.id}
@@ -603,9 +601,7 @@ export function CardStudio({
                     <div className="flex-1 min-w-0">
                       <div className={`text-xs font-bold truncate ${enabled ? 'text-slate-100' : 'text-slate-500'}`}>{v.label}</div>
                       <div className="text-[10px] text-slate-400">
-                        {level === 0
-                          ? 'Statistiche base'
-                          : <>+{level}/+{level} → <span className="text-emerald-400 font-semibold font-mono">{boostedAtk}/{boostedHp}</span></>}
+                        {level === 0 ? 'Finitura base' : 'Solo estetica · stesse statistiche'}
                       </div>
                     </div>
                     {enabled ? (

@@ -272,7 +272,7 @@ function applyEffects(state, isPlayer, effects) {
       case 'summon_token': {
         const count = effect.count || 1;
         for (let i = 0; i < count; i++) {
-          if (active.board.length < 7) {
+          if (active.board.length < 5) {
             const token = createTokenMinion(effect.tokenName, isPlayer, (state._tokenSeq = (state._tokenSeq || 0) + 1));
             active.board.push(token);
             pushLog(state, `✨ Rinforzo: [${token.name}] (${token.atk}/${token.hp}) entra in campo per ${active.name}!`, 'summon');
@@ -375,7 +375,7 @@ export function executeTurnTriggers(state, isPlayer) {
         } else if (trig.type === 'spawn_token') {
           const count = trig.count || 1;
           for (let i = 0; i < count; i++) {
-            if (active.board.length < 7) {
+            if (active.board.length < 5) {
               const token = createTokenMinion(trig.tokenName, isPlayer, (state._tokenSeq = (state._tokenSeq || 0) + 1));
               active.board.push(token);
               pushLog(state, `🌀 [${minion.name}] genera [${token.name}] (${token.atk}/${token.hp}) sul terreno!`, 'summon');
@@ -475,6 +475,11 @@ export function playCard(gameState, isPlayer, cardInstanceId, targetId = null) {
 
   // Check Mana
   if (active.mana < effectiveCost) {
+    return state;
+  }
+
+  // Limite tavola: massimo 5 creature in campo (le magie non occupano il campo)
+  if (card.type === 'CREATURA' && active.board.length >= 5) {
     return state;
   }
 
@@ -626,9 +631,9 @@ export function endTurn(gameState) {
       pushLog(state, `🔥 Mano piena! [${burnedCard.name}] è stata bruciata.`, 'warning');
     }
   } else {
-    // Fatigue damage
-    active.hp = Math.max(0, active.hp - 2);
-    pushLog(state, `⚠️ Mazzo esaurito! ${active.name} subisce 2 danni da fatica.`, 'damage');
+    // Mazzo esaurito: sconfitta immediata (deck-out), niente più danno da fatica.
+    active.deckedOut = true;
+    pushLog(state, `📕 Mazzo esaurito! ${active.name} non ha più carte da pescare e perde la partita.`, 'death');
   }
 
   state.turnNumber += 1;
@@ -666,11 +671,14 @@ function cleanupDeadMinions(state) {
 }
 
 function checkWinConditions(state) {
-  if (state.player.hp <= 0 && state.opponent.hp <= 0) {
+  // Un lato perde se l'Eroe è a 0 HP oppure se ha esaurito il mazzo (deck-out).
+  const pOut = state.player.hp <= 0 || state.player.deckedOut;
+  const oOut = state.opponent.hp <= 0 || state.opponent.deckedOut;
+  if (pOut && oOut) {
     state.winner = 'draw';
-  } else if (state.player.hp <= 0) {
+  } else if (pOut) {
     state.winner = 'opponent';
-  } else if (state.opponent.hp <= 0) {
+  } else if (oOut) {
     state.winner = 'player';
   }
 }

@@ -708,7 +708,9 @@ export function RealArena() {
     if (!p) return
     const effCost = getCardEffectiveCost(card, p)
     if (!isMyTurn || winner || p.mana < effCost) { if (isMyTurn && !winner) soundEngine.playDamage(); return }
-    
+    // Limite tavola: max 5 creature in campo
+    if (card.type === 'CREATURA' && p.board.length >= 5) { soundEngine.playDamage(); return }
+
     // Suono o effetto magico speciale se la carta ha abilità
     if (card.abilityText && card.abilityText.length > 5) {
       if (/cur\w*|ripristin/i.test(card.abilityText)) {
