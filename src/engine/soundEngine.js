@@ -217,6 +217,19 @@ export const soundEngine = {
     return isBgmMuted;
   },
 
+  // Volume musica 0..1 (aggiornato dal vivo dal menu di gioco)
+  setMusicVolume(v) {
+    bgmVolume = Math.max(0, Math.min(1, Number(v) || 0));
+    if (bgmGainNode && audioCtx && !isBgmMuted) {
+      try { bgmGainNode.gain.setValueAtTime(bgmVolume, audioCtx.currentTime); } catch (e) {}
+    }
+    return bgmVolume;
+  },
+
+  getMusicVolume() {
+    return bgmVolume;
+  },
+
   toggleSfx() {
     isSfxMuted = !isSfxMuted;
     return !isSfxMuted;

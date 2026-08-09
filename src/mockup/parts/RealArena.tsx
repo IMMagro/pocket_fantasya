@@ -321,6 +321,26 @@ function HeroBar({ name, hp, shield, isOpponent, flash, hasSlash, hasSparks, has
   )
 }
 
+// Pila visiva mazzo/cimitero con conteggio
+function CardPile({ count, label, kind, pos }: { count: number; label: string; kind: 'deck' | 'grave'; pos: any }) {
+  const color = kind === 'deck' ? '#60a5fa' : '#9ca3af'
+  const empty = count <= 0
+  return (
+    <div style={{ position: 'absolute', zIndex: 6, pointerEvents: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, opacity: empty ? 0.35 : 1, ...pos }}>
+      <div style={{ position: 'relative', width: 46, height: 64 }}>
+        {[0, 1, 2].map(i => (
+          <div key={i} style={{ position: 'absolute', left: i * 2, top: -i * 2, width: 46, height: 64, borderRadius: 6, background: kind === 'deck' ? 'linear-gradient(160deg,#1e3a8a,#0b1220)' : 'linear-gradient(160deg,#2b2f3a,#0b0e14)', border: `1px solid ${color}66`, boxShadow: '0 4px 10px rgba(0,0,0,0.5)' }} />
+        ))}
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {kind === 'deck' ? <Icon.layers style={{ width: 20, height: 20, color }} /> : <Icon.skull style={{ width: 20, height: 20, color }} />}
+        </div>
+        <div className="font-cinzel" style={{ position: 'absolute', bottom: -7, right: -7, minWidth: 20, height: 20, padding: '0 5px', borderRadius: 10, background: '#06080f', border: `1px solid ${color}`, color, fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{count}</div>
+      </div>
+      <div className="font-cinzel" style={{ fontSize: 8, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(232,220,200,0.5)' }}>{label}</div>
+    </div>
+  )
+}
+
 export function RealArena() {
   const [screen, setScreen] = useState<'lobby' | 'battle'>('lobby')
   const [lobbyMode, setLobbyMode] = useState<'menu' | 'host' | 'join'>('menu')
@@ -336,6 +356,8 @@ export function RealArena() {
   // ── Audio & Visual FX State ────────────────────────────────────────────────
   const [isMusicOn, setIsMusicOn] = useState(true)
   const [isSfxOn, setIsSfxOn] = useState(true)
+  const [menuOpen, setMenuOpen] = useState(false)          // menu di gioco (ESC)
+  const [musicVol, setMusicVol] = useState<number>(() => { try { return soundEngine.getMusicVolume?.() ?? 0.28 } catch { return 0.28 } })
   const [animAttackerId, setAnimAttackerId] = useState<string | null>(null)
   const [animAttackerDir, setAnimAttackerDir] = useState<'up' | 'down'>('up')
   const [slashTargets, setSlashTargets] = useState<{ [key: string]: boolean }>({})
@@ -566,7 +588,17 @@ export function RealArena() {
     setSelectedAttackerId(null)
     setAnimAttackerId(null)
     setTurnBanner(null)
+    setMenuOpen(false)
   }
+
+  // Menu di gioco: ESC apre/chiude il menu impostazioni durante la battaglia
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && screen === 'battle') { e.preventDefault(); setMenuOpen(m => !m) }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [screen])
 
   const startSolo = () => {
     if (myDeck.deck.length < 2) return
@@ -960,6 +992,10 @@ export function RealArena() {
       )}
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 2, overflow: 'hidden' }}>
+        {/* Pile: Cimitero a sinistra, Mazzo a destra (del giocatore) */}
+        <CardPile kind="grave" label="Cimitero" count={p.graveyard?.length || 0} pos={{ left: 12, bottom: 138 }} />
+        <CardPile kind="deck" label="Mazzo" count={p.deck?.length || 0} pos={{ right: 12, bottom: 138 }} />
+
         {/* Top bar con controlli BGM / SFX */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', flexShrink: 0, background: 'rgba(6,8,15,0.85)', backdropFilter: 'blur(12px)', borderBottom: '1px solid rgba(240,165,0,0.07)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -1164,6 +1200,45 @@ export function RealArena() {
             <div className="font-cinzel-deco" style={{ fontSize: 'clamp(30px,5vw,52px)', fontWeight: 700, color: '#f87171', marginBottom: 12 }}>Avversario disconnesso</div>
             <div style={{ fontSize: 14, color: 'rgba(232,220,200,0.5)', marginBottom: 32 }}>Il collega ha lasciato la partita.</div>
             <button onClick={leaveMatch} className="btn-primary font-cinzel" style={{ padding: '13px 36px', borderRadius: 12, background: 'linear-gradient(135deg,#f0a500,#d4842a)', border: 'none', color: '#06080f', fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer' }}>Torna al Menu</button>
+          </div>
+        </div>
+      )}
+
+      {/* Menu di gioco (ESC): impostazioni + arrenditi */}
+      {menuOpen && !winner && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 120, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'fadeIn 0.2s ease both' }}
+          onClick={() => setMenuOpen(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ width: 340, background: 'linear-gradient(180deg, rgba(13,17,32,0.98), rgba(6,8,15,0.98))', border: '1px solid rgba(240,165,0,0.3)', borderRadius: 18, padding: 24, boxShadow: '0 20px 60px rgba(0,0,0,0.7)' }}>
+            <div className="font-cinzel-deco" style={{ fontSize: 22, fontWeight: 700, color: '#f0a500', textAlign: 'center', letterSpacing: '0.06em', marginBottom: 18 }}>Menu</div>
+
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'rgba(232,220,200,0.6)', marginBottom: 6 }}>
+                <span>Volume Musica</span><span>{Math.round(musicVol * 100)}%</span>
+              </div>
+              <input type="range" min={0} max={1} step={0.05} value={musicVol}
+                onChange={e => { const v = parseFloat(e.target.value); setMusicVol(v); soundEngine.setMusicVolume?.(v) }}
+                style={{ width: '100%', accentColor: '#f0a500' }} />
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, marginBottom: 18 }}>
+              <button onClick={() => { const a = soundEngine.toggleMusic(); setIsMusicOn(a) }} className="font-cinzel"
+                style={{ flex: 1, padding: '9px', borderRadius: 10, background: isMusicOn ? 'rgba(96,165,250,0.15)' : 'rgba(255,255,255,0.04)', border: `1px solid ${isMusicOn ? 'rgba(96,165,250,0.4)' : 'rgba(255,255,255,0.1)'}`, color: isMusicOn ? '#60a5fa' : 'rgba(232,220,200,0.4)', fontSize: 11, cursor: 'pointer' }}>
+                Musica {isMusicOn ? 'ON' : 'OFF'}
+              </button>
+              <button onClick={() => { const a = soundEngine.toggleSfx(); setIsSfxOn(a) }} className="font-cinzel"
+                style={{ flex: 1, padding: '9px', borderRadius: 10, background: isSfxOn ? 'rgba(96,165,250,0.15)' : 'rgba(255,255,255,0.04)', border: `1px solid ${isSfxOn ? 'rgba(96,165,250,0.4)' : 'rgba(255,255,255,0.1)'}`, color: isSfxOn ? '#60a5fa' : 'rgba(232,220,200,0.4)', fontSize: 11, cursor: 'pointer' }}>
+                SFX {isSfxOn ? 'ON' : 'OFF'}
+              </button>
+            </div>
+
+            <button onClick={() => setMenuOpen(false)} className="btn-primary font-cinzel"
+              style={{ width: '100%', padding: '12px', borderRadius: 10, background: 'linear-gradient(135deg,#f0a500,#d4842a)', border: 'none', color: '#06080f', fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer', marginBottom: 10 }}>
+              Riprendi
+            </button>
+            <button onClick={leaveMatch} className="font-cinzel"
+              style={{ width: '100%', padding: '11px', borderRadius: 10, background: 'transparent', border: '1px solid rgba(248,113,113,0.4)', color: '#f87171', fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer' }}>
+              Arrenditi
+            </button>
           </div>
         </div>
       )}
