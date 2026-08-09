@@ -13,6 +13,7 @@ const VARIANT_ORDER: Record<string, number> = {
   gold_foil: 2,
   full_art: 3,
   secret_holo: 4,
+  out: 5,
 }
 
 const VARIANT_LABELS: Record<string, { label: string; icon: string }> = {
@@ -21,6 +22,7 @@ const VARIANT_LABELS: Record<string, { label: string; icon: string }> = {
   gold_foil: { label: 'Gold Foil', icon: '🌟' },
   full_art: { label: 'Full-Art', icon: '🎨' },
   secret_holo: { label: 'Secret Rare', icon: '👑' },
+  out: { label: 'OUT', icon: '🌌' },
 }
 
 interface BaseCardGroup {
@@ -383,6 +385,7 @@ export function RealCollection() {
   const { inventory, hasCard, getCardQuantity } = usePlayerInventory()
 
   const [search, setSearch] = useState('')
+  const [fSet, setFSet] = useState<string>('tutte')
   const [fStatus, setFStatus] = useState<'tutte' | 'scoperte' | 'bloccate'>('tutte')
   const [fRarity, setFRarity] = useState<string>('tutte')
   const [sortBy, setSortBy] = useState<'number' | 'name' | 'rarity'>('number')
@@ -435,6 +438,10 @@ export function RealCollection() {
   const filteredGroups = useMemo(() => {
     let list = [...baseCardGroups]
 
+    if (fSet !== 'tutte') {
+      list = list.filter(g => g.variants.some(v => v.set === fSet))
+    }
+
     if (search) {
       const q = search.toLowerCase()
       list = list.filter(g => 
@@ -465,7 +472,7 @@ export function RealCollection() {
     })
 
     return list
-  }, [baseCardGroups, search, fStatus, fRarity, sortBy])
+  }, [baseCardGroups, search, fSet, fStatus, fRarity, sortBy])
 
   // Statistiche Album
   const totalBaseCards = baseCardGroups.length
@@ -512,6 +519,39 @@ export function RealCollection() {
           <div style={{ fontSize: 11, color: 'rgba(232,220,200,0.5)', lineHeight: 1.5 }}>
             • Varianti sbloccate: <strong style={{ color: '#e8dcc8' }}>{totalVariantsOwned}/{totalVariantsCount}</strong><br />
             • Carte totali nel baule: <strong style={{ color: '#e8dcc8' }}>{totalCardsOwned}</strong>
+          </div>
+        </div>
+
+        {/* Filtro Espansione (Set) */}
+        <div>
+          <div className="font-cinzel" style={{ fontSize: 10, fontWeight: 600, color: 'rgba(232,220,200,0.35)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 8 }}>
+            Espansione
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {[
+              { id: 'tutte', label: 'Tutte le Espansioni' },
+              { id: 'gli_elettronici', label: 'Gli Elettronici (Base)' },
+              { id: 'promo', label: 'Promo / Speciali' },
+            ].map(s => (
+              <button
+                key={s.id}
+                onClick={() => setFSet(s.id)}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 8,
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  fontSize: 11,
+                  fontFamily: 'Cinzel, serif',
+                  background: fSet === s.id ? 'rgba(240,165,0,0.15)' : 'rgba(13,17,32,0.6)',
+                  border: `1px solid ${fSet === s.id ? 'rgba(240,165,0,0.4)' : 'rgba(255,255,255,0.05)'}`,
+                  color: fSet === s.id ? '#f0a500' : 'rgba(232,220,200,0.6)',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                {s.label}
+              </button>
+            ))}
           </div>
         </div>
 

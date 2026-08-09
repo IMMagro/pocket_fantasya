@@ -292,41 +292,6 @@ export default function App() {
           <NavBtn icon={<Icon.collection style={{ width: 14, height: 14 }} />} label="Collezione" active={activeNav === 'collection'} onClick={() => setActiveNav('collection')} />
           <NavBtn icon={<Icon.cards style={{ width: 14, height: 14 }} />} label="Deck Builder" active={activeNav === 'deck'} onClick={() => setActiveNav('deck')} />
           <NavBtn icon={<Icon.sword style={{ width: 14, height: 14 }} />} label="Arena" active={activeNav === 'arena'} onClick={() => setActiveNav('arena')} />
-          <a
-            href="#creator"
-            title="Apri il Card Creator Studio per creare e bilanciare nuove carte"
-            style={{ textDecoration: 'none' }}
-          >
-            <button
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '6px 14px',
-                borderRadius: 10,
-                background: 'linear-gradient(135deg, rgba(240,165,0,0.18), rgba(240,165,0,0.06))',
-                border: '1px solid rgba(240,165,0,0.35)',
-                color: '#f0a500',
-                fontSize: 12,
-                fontFamily: 'Cinzel, serif',
-                fontWeight: 700,
-                letterSpacing: '0.06em',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = '#f0a500';
-                e.currentTarget.style.boxShadow = '0 0 12px rgba(240,165,0,0.3)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = 'rgba(240,165,0,0.35)';
-                e.currentTarget.style.boxShadow = 'none';
-              }}
-            >
-              <Icon.wizard style={{ width: 13, height: 13 }} />
-              Studio Creatore
-            </button>
-          </a>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <GoldBadge gold={gold} onOpenShop={() => setActiveNav('packs')} />

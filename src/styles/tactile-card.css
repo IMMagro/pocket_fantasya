@@ -43,6 +43,14 @@
   justify-content: space-between !important;
 }
 
+/* OUT Variant Support */
+.tactile-card-root.is-out {
+  overflow: visible !important;
+}
+.tactile-card-root.is-out .tactile-fullart-container {
+  overflow: visible !important;
+}
+
 /* Subtle Inset Double Frame */
 .tactile-card-inset-frame {
   position: absolute;
@@ -419,6 +427,69 @@
 @keyframes tactile-secret-shine {
   0% { background-position: 0% 0%; filter: hue-rotate(0deg) saturate(1.2); }
   100% { background-position: 100% 100%; filter: hue-rotate(360deg) saturate(1.5); }
+}
+
+/* ============================================================ */
+/* OUT VARIANT PARTICLE EFFECTS                                 */
+/* ============================================================ */
+
+/* Shader di base (un mix cosmico) per la variante OUT */
+.tactile-out {
+  box-shadow: 
+    0 10px 40px -10px rgba(139, 92, 246, 0.4),
+    0 20px 60px -15px rgba(217, 119, 6, 0.3),
+    inset 0 0 15px rgba(255, 255, 255, 0.6) !important;
+}
+.tactile-out::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  z-index: 10;
+  pointer-events: none;
+  background: linear-gradient(135deg, rgba(236,72,153,0.1) 0%, rgba(139,92,246,0.3) 50%, rgba(217,119,6,0.1) 100%);
+  mix-blend-mode: color-dodge;
+}
+
+/* Container particellari */
+.tactile-particles-bg, .tactile-particles-fg {
+  position: absolute;
+  inset: -40px;
+  pointer-events: none;
+  z-index: -1;
+}
+.tactile-particles-fg {
+  z-index: 100;
+}
+
+/* Singola particella */
+.tactile-particle {
+  position: absolute;
+  border-radius: 50%;
+  opacity: 0;
+  animation: particle-float 3s infinite ease-in-out alternate, particle-pulse 4s infinite linear;
+}
+
+.tactile-particle-0 { width: 4px; height: 4px; background: #fef08a; box-shadow: 0 0 8px 2px #fef08a; animation-duration: 4s; }
+.tactile-particle-1 { width: 6px; height: 6px; background: #e879f9; box-shadow: 0 0 10px 3px #e879f9; animation-duration: 5s; }
+.tactile-particle-2 { width: 3px; height: 3px; background: #38bdf8; box-shadow: 0 0 6px 1px #38bdf8; animation-duration: 3s; }
+.tactile-particle-3 { width: 5px; height: 5px; background: #ffffff; box-shadow: 0 0 12px 4px rgba(255,255,255,0.8); animation-duration: 6s; }
+
+.tactile-particle-fg-0 { width: 5px; height: 5px; background: #fbbf24; box-shadow: 0 0 10px 3px #fbbf24; animation-duration: 4.5s; }
+.tactile-particle-fg-1 { width: 4px; height: 4px; background: #f472b6; box-shadow: 0 0 8px 2px #f472b6; animation-duration: 3.5s; }
+.tactile-particle-fg-2 { width: 7px; height: 7px; background: #ffffff; box-shadow: 0 0 14px 4px rgba(255,255,255,0.9); animation-duration: 5.5s; }
+
+@keyframes particle-float {
+  0% { transform: translate(0, 0) scale(0.8); opacity: 0; }
+  25% { opacity: 0.8; }
+  50% { transform: translate(-10px, -20px) scale(1.2); opacity: 1; }
+  75% { opacity: 0.8; }
+  100% { transform: translate(15px, -40px) scale(0.5); opacity: 0; }
+}
+@keyframes particle-pulse {
+  0% { filter: brightness(1); }
+  50% { filter: brightness(1.5) blur(1px); }
+  100% { filter: brightness(1); }
 }
 
 /* Badge on top corner for variant */

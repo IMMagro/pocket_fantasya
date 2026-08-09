@@ -190,6 +190,54 @@ export function extractEffectsFromText(text: string, title: string = ''): Detect
 }
 
 /**
+ * Legge direttamente gli effetti strutturati (Phase D) per un calcolo deterministico e perfetto.
+ */
+export function extractEffectsFromFlags(flags: any): DetectedEffect[] {
+  const effects: DetectedEffect[] = []
+  if (!flags) return effects;
+
+  // Passivi
+  if (flags.taunt) {
+    effects.push({ id: 'taunt', label: 'Provocazione / Guardiano', points: 1.5, description: 'Difende gli alleati (+1.5 pt)', icon: '🛡️' })
+  }
+  if (flags.divineShield) {
+    effects.push({ id: 'shield', label: 'Scudo Divino', points: 1.5, description: 'Ignora i primi danni subiti (+1.5 pt)', icon: '✨' })
+  }
+  if (flags.thorns && flags.thorns > 0) {
+    const pts = flags.thorns * 1.5;
+    effects.push({ id: 'thorns', label: `Spine (${flags.thorns})`, points: pts, description: `Danno da contrattacco (+${pts} pt)`, icon: '🗡️' })
+  }
+  if (flags.conditionalCost) {
+    effects.push({ id: 'conditional_cost', label: 'Sconto Mana Condizionale', points: 2.0, description: 'Potenziale costo ridotto (+2.0 pt)', icon: '⚡' })
+  }
+
+  // Battlecry
+  if (flags.battlecry && Array.isArray(flags.battlecry)) {
+    flags.battlecry.forEach((bc: any) => {
+      const val = bc.value || bc.count || 1;
+      if (bc.type === 'damage') effects.push({ id: 'damage', label: `Danno Diretto (${val})`, points: val * 2.0, description: `(+${val * 2.0} pt)`, icon: '⚔️' })
+      if (bc.type === 'heal') effects.push({ id: 'heal', label: `Cura (${val})`, points: val * 1.5, description: `(+${val * 1.5} pt)`, icon: '💖' })
+      if (bc.type === 'draw') effects.push({ id: 'draw', label: `Pesca (${val})`, points: val * 2.5, description: `(+${val * 2.5} pt)`, icon: '🃏' })
+      if (bc.type === 'steal_mana') effects.push({ id: 'steal_mana', label: `Ruba Mana (${val})`, points: val * 3.0, description: `(+${val * 3.0} pt)`, icon: '💰' })
+      if (bc.type === 'steal_card') effects.push({ id: 'steal_card', label: `Ruba Carta (${val})`, points: val * 3.5, description: `(+${val * 3.5} pt)`, icon: '🕵️' })
+      if (bc.type === 'destroy_minion') effects.push({ id: 'removal', label: `Distruggi Nemico (${val})`, points: val * 6.5, description: `(+${val * 6.5} pt)`, icon: '💥' })
+      if (bc.type === 'summon_token') effects.push({ id: 'spawn', label: `Evoca Token (${val})`, points: val * 4.0, description: `(+${val * 4.0} pt)`, icon: '👥' })
+    })
+  }
+
+  // Turn Triggers
+  if (flags.turnTriggers && Array.isArray(flags.turnTriggers)) {
+    flags.turnTriggers.forEach((tt: any) => {
+      const val = tt.value || tt.count || 1;
+      if (tt.type === 'hero_burn') effects.push({ id: 'damage_dot', label: `Danno Continuo (${val}/turno)`, points: val * 2.5, description: `(+${val * 2.5} pt)`, icon: '🔥' })
+      if (tt.type === 'spawn_token') effects.push({ id: 'spawn_dot', label: `Generatore (${val}/turno)`, points: val * 5.0, description: `(+${val * 5.0} pt)`, icon: '🌀' })
+    })
+  }
+
+  return effects
+}
+
+/**
  * Calcola il Budget di Punti Mana per una carta.
  * Formula Vanilla Test standard: Costo * 2 + 1 (con curve premiate per costi alti).
  */
@@ -213,6 +261,7 @@ export function analyzeCardBalance(card: {
   rarity?: string
   abilityTitle?: string
   abilityText?: string
+  effects?: any
 }): CardBalanceReport {
   const cost = Math.max(0, parseInt(String(card.cost ?? 0), 10) || 0)
   const atk = Math.max(0, parseInt(String(card.atk ?? 0), 10) || 0)
@@ -220,7 +269,11 @@ export function analyzeCardBalance(card: {
   const type = String(card.type || 'CREATURA').toUpperCase()
   const rarity = String(card.rarity || 'common').toLowerCase()
 
-  const detectedEffects = extractEffectsFromText(card.abilityText || '', card.abilityTitle || '')
+  // Prioritize structured effects (Phase D) if available, otherwise fallback to NLP
+  const detectedEffects = (card.effects && Object.keys(card.effects).length > 0)
+    ? extractEffectsFromFlags(card.effects)
+    : extractEffectsFromText(card.abilityText || '', card.abilityTitle || '')
+  
   
   const statPoints = (type === 'INCANTESIMO' || type === 'MAGIA' || type === 'TRAPPOLA') ? 0 : (atk + hp)
   const effectsPoints = detectedEffects.reduce((sum, e) => sum + e.points, 0)

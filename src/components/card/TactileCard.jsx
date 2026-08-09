@@ -36,6 +36,13 @@ export const CARD_VARIANTS = {
     badge: '👑 SECRET RARE',
     cssClass: 'tactile-secret-holo',
     tagColor: '#ec4899'
+  },
+  out: {
+    id: 'out',
+    label: 'OUT (Artwork Sbordato)',
+    badge: '🌌 OUT',
+    cssClass: 'tactile-out',
+    tagColor: '#8b5cf6'
   }
 };
 
@@ -204,10 +211,11 @@ export function TactileCard({
   // Active Variant determination (forced prop or card attribute or fallback from rarity)
   const activeVariantKey = forcedVariant || card.variant || (card.isFullArt ? 'full_art' : 'standard');
   const variantInfo = CARD_VARIANTS[activeVariantKey] || CARD_VARIANTS.standard;
-  const isFullArtMode = activeVariantKey === 'full_art' || activeVariantKey === 'secret_holo' || !!card.isFullArt;
+  const isOutMode = activeVariantKey === 'out';
+  const isFullArtMode = activeVariantKey === 'full_art' || activeVariantKey === 'secret_holo' || isOutMode || !!card.isFullArt;
 
-  // Active Special Finish Shader (from variant or rarity fallback)
-  const finishShaderClass = variantInfo.cssClass || (activeVariantKey === 'standard' ? rarityInfo.foil : '');
+  // Active Special Finish Shader (from variant directly, rarity effects are handled by the separate overlay now)
+  const finishShaderClass = variantInfo.cssClass || '';
 
   // Regolazione manuale dell'immagine (zoom + posizione) impostata nel Card Studio.
   // Se non personalizzata (scala 1, offset 0) restiamo con lo stile CSS di default
@@ -257,10 +265,22 @@ export function TactileCard({
           ? `perspective(1000px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) scale3d(1.035, 1.035, 1.035)` 
           : 'perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)',
         transition: isHovered ? 'transform 0.08s ease-out' : 'transform 0.35s ease-out',
-        ...style
       }}
-      className={`tactile-card-root group cursor-pointer ${finishShaderClass} ${className}`}
+      className={`tactile-card-root group cursor-pointer ${finishShaderClass} ${isOutMode ? 'is-out' : ''} ${className}`}
     >
+      {/* Particle Effects for OUT variant (Background Layer) */}
+      {isOutMode && (
+        <div className="tactile-particles-bg">
+          {[...Array(12)].map((_, i) => (
+            <div key={`bg-particle-${i}`} className={`tactile-particle tactile-particle-${i % 4}`} style={{
+              left: `${Math.random() * 100}%`,
+              top: `${Math.random() * 100}%`,
+              animationDelay: `${Math.random() * 5}s`
+            }} />
+          ))}
+        </div>
+      )}
+
       {/* Inset Hairline Double Frame (when not full-art) */}
       {!isFullArtMode && (
         <div className="tactile-card-inset-frame" style={{ borderRadius: cfg.borderRadius - 4 }} />
@@ -280,11 +300,24 @@ export function TactileCard({
         </div>
       )}
 
+      {/* Particle Effects for OUT variant (Foreground Layer) */}
+      {isOutMode && (
+        <div className="tactile-particles-fg pointer-events-none absolute inset-0 z-50">
+          {[...Array(8)].map((_, i) => (
+            <div key={`fg-particle-${i}`} className={`tactile-particle tactile-particle-fg-${i % 3}`} style={{
+              left: `${Math.random() * 120 - 10}%`,
+              top: `${Math.random() * 120 - 10}%`,
+              animationDelay: `${Math.random() * 4}s`
+            }} />
+          ))}
+        </div>
+      )}
+
       {/* ============================================================ */}
-      {/* CASE 1: FULL-ART CARD RENDERING (FULL-BLEED ARTWORK)         */}
+      {/* CASE 1: FULL-ART & OUT CARD RENDERING (FULL-BLEED ARTWORK)   */}
       {/* ============================================================ */}
       {isFullArtMode ? (
-        <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
+        <div style={{ position: 'relative', width: '100%', height: '100%', overflow: isOutMode ? 'visible' : 'hidden' }}>
           
           {/* Top Floating Hanging Ribbon */}
           <div 
@@ -565,6 +598,10 @@ export function TactileCard({
         </div>
       )}
 
+      {/* Rarity Overlay Effect (for epic, legendary, mythic) */}
+      {['epic', 'legendary', 'mythic'].includes(cardRarity) && (
+        <div className={`tactile-rarity-overlay rarity-${cardRarity}`}></div>
+      )}
     </div>
   );
 }

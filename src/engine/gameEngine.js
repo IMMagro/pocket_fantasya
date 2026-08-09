@@ -36,11 +36,15 @@ export const TOKEN_REGISTRY = {
   }
 };
 
-export function createTokenMinion(tokenKeyOrName, isPlayer, seq = 1) {
+export function createTokenMinion(tokenKeyOrName, isPlayer, seq = 1, allCards = []) {
   const normalized = String(tokenKeyOrName || '').toLowerCase().trim();
   let baseTemplate = null;
 
-  if (normalized.includes('davide') || normalized.includes('forma 1')) {
+  const exactMatch = allCards.find(c => c.name.toLowerCase().trim() === normalized);
+
+  if (exactMatch) {
+    baseTemplate = exactMatch;
+  } else if (normalized.includes('davide') || normalized.includes('forma 1')) {
     baseTemplate = TOKEN_REGISTRY['davide_forma_1'];
   } else if (normalized.includes('cliente') || normalized.includes('insoddisfatt')) {
     baseTemplate = TOKEN_REGISTRY['cliente_insoddisfatta'];
@@ -64,7 +68,7 @@ export function createTokenMinion(tokenKeyOrName, isPlayer, seq = 1) {
 
   const prefix = isPlayer ? 'p_token' : 'o_token';
   const instanceId = `${prefix}_${Date.now()}_${seq}`;
-  const abilities = parseAbility(baseTemplate.abilityText);
+  const abilities = baseTemplate.effects || {};
 
   return {
     ...baseTemplate,
@@ -225,6 +229,11 @@ export function parseAbility(rawText = '') {
     bucket.push({ type: 'buff_board', atk: wordToNumber(buffMatch[1]) || 0, hp: wordToNumber(buffMatch[2]) || 0 });
   }
 
+  // --- Assorbe poteri sincronizzatore rotto ---
+  if (/assorbe il potere di tutte le carte sincronizzatore rotto/i.test(t)) {
+    bucket.push({ type: 'absorb_broken_sync' });
+  }
+
   return parsed;
 }
 
@@ -232,20 +241,19 @@ export function parseAbility(rawText = '') {
 export function getCardEffectiveCost(card, heroState) {
   if (!card) return 0;
   const rawCost = typeof card.cost === 'number' ? card.cost : 0;
-  if (!card.abilityText) return rawCost;
+  const abilities = card.effects || {};
 
-  const parsed = parseAbility(card.abilityText);
-  if (parsed.conditionalCost && heroState) {
-    const thresholdHp = (heroState.maxHp || 30) * parsed.conditionalCost.hpThresholdPercent;
+  if (abilities.conditionalCost && heroState) {
+    const thresholdHp = (heroState.maxHp || 30) * abilities.conditionalCost.hpThresholdPercent;
     if (heroState.hp <= thresholdHp) {
-      return parsed.conditionalCost.newCost;
+      return abilities.conditionalCost.newCost;
     }
   }
   return rawCost;
 }
 
 // Applica una lista di effetti battlecry/deathrattle allo stato.
-function applyEffects(state, isPlayer, effects) {
+function applyEffects(state, isPlayer, effects, sourceCard = null) {
   if (!effects || effects.length === 0) return;
   const active = isPlayer ? state.player : state.opponent;
   const enemy = isPlayer ? state.opponent : state.player;
@@ -273,7 +281,7 @@ function applyEffects(state, isPlayer, effects) {
         const count = effect.count || 1;
         for (let i = 0; i < count; i++) {
           if (active.board.length < 5) {
-            const token = createTokenMinion(effect.tokenName, isPlayer, (state._tokenSeq = (state._tokenSeq || 0) + 1));
+            const token = createTokenMinion(effect.tokenName, isPlayer, (state._tokenSeq = (state._tokenSeq || 0) + 1), state.allCards);
             active.board.push(token);
             pushLog(state, `✨ Rinforzo: [${token.name}] (${token.atk}/${token.hp}) entra in campo per ${active.name}!`, 'summon');
           } else {
@@ -347,6 +355,40 @@ function applyEffects(state, isPlayer, effects) {
         pushLog(state, `⚡ Le creature di ${active.name} ottengono +${effect.atk}/+${effect.hp}!`, 'summon');
         break;
       }
+      case 'absorb_broken_sync': {
+        if (!sourceCard || sourceCard.type !== 'CREATURA') break;
+        // Cerca tutte le carte "Sincronizzatore rotto" o "sincronizzatore" nel campo e cimitero (di entrambi i giocatori)
+        const isTarget = (c) => c && c.name && c.name.toLowerCase().includes('sincronizzatore rotto');
+        const sources = [
+          ...active.board.filter(isTarget),
+          ...active.graveyard.filter(isTarget),
+          ...enemy.board.filter(isTarget),
+          ...enemy.graveyard.filter(isTarget)
+        ];
+        
+        // Escludi la carta stessa se per caso si chiama Sincronizzatore rotto (anche se improbabile)
+        const validSources = sources.filter(c => c.instanceId !== sourceCard.instanceId);
+        
+        let totalAtk = 0;
+        let totalHp = 0;
+        validSources.forEach(c => {
+          totalAtk += (c.atk || 0);
+          totalHp += (c.hp || 0);
+        });
+
+        if (totalAtk > 0 || totalHp > 0) {
+          const minion = active.board.find(m => m.instanceId === sourceCard.instanceId);
+          if (minion) {
+            minion.atk += totalAtk;
+            minion.hp += totalHp;
+            minion.currentHp += totalHp;
+            pushLog(state, `🌀 [${minion.name}] assorbe energia dai Sincronizzatori: +${totalAtk}/+${totalHp}!`, 'summon');
+          }
+        } else {
+          pushLog(state, `💨 Nessun Sincronizzatore rotto da cui assorbire potere.`, 'info');
+        }
+        break;
+      }
       default:
         break;
     }
@@ -362,10 +404,8 @@ export function executeTurnTriggers(state, isPlayer) {
   const minions = [...active.board];
 
   minions.forEach(minion => {
-    // Controlla se ha trigger memorizzati o parsali al volo
-    const triggers = (minion.turnTriggers && minion.turnTriggers.length > 0)
-      ? minion.turnTriggers
-      : parseAbility(minion.abilityText).turnTriggers;
+    // Controlla se ha trigger memorizzati
+    const triggers = minion.turnTriggers || [];
 
     if (triggers && triggers.length > 0) {
       triggers.forEach(trig => {
@@ -376,7 +416,7 @@ export function executeTurnTriggers(state, isPlayer) {
           const count = trig.count || 1;
           for (let i = 0; i < count; i++) {
             if (active.board.length < 5) {
-              const token = createTokenMinion(trig.tokenName, isPlayer, (state._tokenSeq = (state._tokenSeq || 0) + 1));
+              const token = createTokenMinion(trig.tokenName, isPlayer, (state._tokenSeq = (state._tokenSeq || 0) + 1), state.allCards);
               active.board.push(token);
               pushLog(state, `🌀 [${minion.name}] genera [${token.name}] (${token.atk}/${token.hp}) sul terreno!`, 'summon');
             }
@@ -413,7 +453,7 @@ function drawCard(side) {
   return false;
 }
 
-export function createInitialGameState(playerDeckCards, opponentDeckCards, playerHeroName = 'Tu', opponentHeroName = 'Avversario') {
+export function createInitialGameState(playerDeckCards, opponentDeckCards, playerHeroName = 'Tu', opponentHeroName = 'Avversario', allCards = []) {
   // Shuffle decks
   const shuffle = (array) => [...array].sort(() => Math.random() - 0.5);
 
@@ -429,6 +469,7 @@ export function createInitialGameState(playerDeckCards, opponentDeckCards, playe
     turnNumber: 1,
     currentTurn: 'player', // 'player' | 'opponent'
     phase: 'main', // 'draw', 'main', 'combat', 'end'
+    allCards: allCards || [],
     _logSeq: 1,
     _tokenSeq: 1,
     player: {
@@ -487,7 +528,7 @@ export function playCard(gameState, isPlayer, cardInstanceId, targetId = null) {
   active.mana -= effectiveCost;
   active.hand.splice(cardIdx, 1);
 
-  const abilities = parseAbility(card.abilityText);
+  const abilities = card.effects || {};
 
   // If Creature: Summon to board
   if (card.type === 'CREATURA') {
@@ -506,12 +547,12 @@ export function playCard(gameState, isPlayer, cardInstanceId, targetId = null) {
     pushLog(state, `${active.name} ha evocato [${card.name}] (${card.atk}/${card.hp})`, 'summon');
 
     // Battlecry: applica gli effetti "quando entra in gioco"
-    applyEffects(state, isPlayer, abilities.battlecry);
+    applyEffects(state, isPlayer, abilities.battlecry, boardMinion);
   } else {
     // If Spell / Magic: Instant effect
     active.graveyard.push(card);
     pushLog(state, `${active.name} ha lanciato la magia [${card.name}]!`, 'spell');
-    applyEffects(state, isPlayer, abilities.battlecry);
+    applyEffects(state, isPlayer, abilities.battlecry, card);
   }
 
   checkWinConditions(state);

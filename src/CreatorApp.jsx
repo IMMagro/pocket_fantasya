@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { CardStudio } from './components/card-studio/CardStudio';
-import { Sparkles, Gamepad2, RefreshCw } from 'lucide-react';
+import { PackBalanceStudio } from './components/card-studio/PackBalanceStudio';
+import { Sparkles, Gamepad2, RefreshCw, Layers, Percent } from 'lucide-react';
 import { soundEngine } from './engine/soundEngine';
 import { io } from 'socket.io-client';
 import starterCards from './data/starterCards.json';
@@ -22,6 +23,7 @@ export function CreatorApp() {
 
   const [isSyncing, setIsSyncing] = useState(false);
   const [socket, setSocket] = useState(null);
+  const [activeTab, setActiveTab] = useState('editor'); // 'editor' | 'pack_balance'
 
   // Sync to server helper. Ritorna sempre un esito e salva SEMPRE in locale (a prova
   // di errore: la carta non va mai persa, anche se il server rifiuta o è spento).
@@ -58,7 +60,7 @@ export function CreatorApp() {
       .then(serverCards => {
         if (Array.isArray(serverCards) && serverCards.length > 0) {
           setCards(serverCards);
-          localStorage.setItem(STORAGE_KEY_CREATOR, JSON.stringify(serverCards));
+          try { localStorage.setItem(STORAGE_KEY_CREATOR, JSON.stringify(serverCards)); } catch {}
         }
       })
       .catch(() => {});
@@ -73,7 +75,7 @@ export function CreatorApp() {
 
     liveSocket.on('cards_updated', ({ cards: updatedCards }) => {
       setCards(updatedCards);
-      localStorage.setItem(STORAGE_KEY_CREATOR, JSON.stringify(updatedCards));
+      try { localStorage.setItem(STORAGE_KEY_CREATOR, JSON.stringify(updatedCards)); } catch {}
     });
 
     return () => {
@@ -83,49 +85,41 @@ export function CreatorApp() {
 
   // Save Card (creates or updates, and auto-syncs)
   const handleSaveCard = (newOrUpdatedCard) => {
-    setCards(prev => {
-      const idx = prev.findIndex(c => c.id === newOrUpdatedCard.id);
-      let updated;
-      if (idx >= 0) {
-        updated = [...prev];
-        updated[idx] = newOrUpdatedCard;
-      } else {
-        updated = [newOrUpdatedCard, ...prev];
-      }
-      syncCardsToServer(updated);
-      return updated;
-    });
+    const idx = cards.findIndex(c => c.id === newOrUpdatedCard.id);
+    let updated;
+    if (idx >= 0) {
+      updated = [...cards];
+      updated[idx] = newOrUpdatedCard;
+    } else {
+      updated = [newOrUpdatedCard, ...cards];
+    }
+    setCards(updated);
+    syncCardsToServer(updated);
   };
 
   // Save/Upsert several cards at once (una sola sync) — usato dalla generazione varianti
   const handleSaveMultipleCards = (newCards) => {
     if (!Array.isArray(newCards) || newCards.length === 0) return;
-    setCards(prev => {
-      const byId = new Map(prev.map(c => [c.id, c]));
-      newCards.forEach(c => byId.set(c.id, c));
-      const updated = Array.from(byId.values());
-      syncCardsToServer(updated);
-      return updated;
-    });
+    const byId = new Map(cards.map(c => [c.id, c]));
+    newCards.forEach(c => byId.set(c.id, c));
+    const updated = Array.from(byId.values());
+    setCards(updated);
+    syncCardsToServer(updated);
   };
 
   // Delete Card
   const handleDeleteCard = (cardId) => {
-    setCards(prev => {
-      const updated = prev.filter(c => c.id !== cardId);
-      syncCardsToServer(updated);
-      return updated;
-    });
+    const updated = cards.filter(c => c.id !== cardId);
+    setCards(updated);
+    syncCardsToServer(updated);
   };
 
   // Delete Multiple Cards
   const handleDeleteMultipleCards = (cardIds) => {
     const idsSet = new Set(cardIds);
-    setCards(prev => {
-      const updated = prev.filter(c => !idsSet.has(c.id));
-      syncCardsToServer(updated);
-      return updated;
-    });
+    const updated = cards.filter(c => !idsSet.has(c.id));
+    setCards(updated);
+    syncCardsToServer(updated);
   };
 
   // Reset / Clear all cards
@@ -189,7 +183,7 @@ export function CreatorApp() {
                 CARD CLASH <span className="text-amber-400 text-xs font-sans font-bold px-2 py-0.5 bg-amber-400/10 rounded-full border border-amber-400/30">STUDIO CREATORE</span>
               </div>
               <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
-                <span>Pannello di Creazione Carte</span>
+                <span>Pannello di Creazione e Bilanciamento</span>
                 {isSyncing && (
                   <span className="text-amber-400 font-bold flex items-center gap-1 animate-pulse">
                     • <RefreshCw className="w-2.5 h-2.5 animate-spin" /> Sincronizzazione in corso...
@@ -197,6 +191,23 @@ export function CreatorApp() {
                 )}
               </div>
             </div>
+          </div>
+
+          <div className="flex items-center gap-2 bg-slate-800/80 p-1 rounded-xl border border-slate-700/50">
+            <button
+              onClick={() => setActiveTab('editor')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition ${activeTab === 'editor' ? 'bg-slate-700 text-amber-400 shadow' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'}`}
+            >
+              <Layers className="w-4 h-4" />
+              Editor Carte
+            </button>
+            <button
+              onClick={() => setActiveTab('pack_balance')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition ${activeTab === 'pack_balance' ? 'bg-slate-700 text-emerald-400 shadow' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'}`}
+            >
+              <Percent className="w-4 h-4" />
+              Drop Rate Bustine
+            </button>
           </div>
 
           <div className="flex items-center gap-3">
@@ -220,17 +231,24 @@ export function CreatorApp() {
 
       {/* Main Studio View */}
       <main className="flex-1 py-4">
-        <CardStudio
-          cards={cards}
-          onSaveCard={handleSaveCard}
-          onSaveMultipleCards={handleSaveMultipleCards}
-          onDeleteCard={handleDeleteCard}
-          onDeleteMultipleCards={handleDeleteMultipleCards}
-          onResetAllCards={handleResetAllCards}
-          onPublishCards={handlePublishCards}
-          onExportCards={handleExportCards}
-          onImportCards={handleImportCards}
-        />
+        {activeTab === 'editor' ? (
+          <CardStudio
+            cards={cards}
+            onSaveCard={handleSaveCard}
+            onSaveMultipleCards={handleSaveMultipleCards}
+            onDeleteCard={handleDeleteCard}
+            onDeleteMultipleCards={handleDeleteMultipleCards}
+            onResetAllCards={handleResetAllCards}
+            onPublishCards={handlePublishCards}
+            onExportCards={handleExportCards}
+            onImportCards={handleImportCards}
+          />
+        ) : (
+          <PackBalanceStudio 
+            cards={cards} 
+            onSaveMultipleCards={handleSaveMultipleCards}
+          />
+        )}
       </main>
 
       <footer className="border-t border-slate-800/80 py-4 px-6 text-center text-xs text-slate-500 flex items-center justify-between max-w-7xl mx-auto w-full">

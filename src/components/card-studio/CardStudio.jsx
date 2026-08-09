@@ -66,15 +66,16 @@ const VARIANTS_LIST = [
   { id: 'standard', label: 'Classica Tattile', icon: '📜', desc: 'Pergamena 1:1' },
   { id: 'holo', label: 'Olografica (Holo)', icon: '✨', desc: 'Riflesso Arcobaleno' },
   { id: 'gold_foil', label: 'Gold Foil', icon: '🌟', desc: 'Laminata in Oro' },
-  { id: 'full_art', label: 'Full-Art', icon: '🎨', desc: 'Artwork a Tutto Schermo' },
-  { id: 'secret_holo', label: 'Secret Rare', icon: '👑', desc: 'Full-Art + Gold + Holo' }
+  { id: 'full_art', label: 'Full-Art', icon: '🎨', desc: 'Senza bordi' },
+  { id: 'secret_holo', label: 'Secret Rare', icon: '👑', desc: 'Full-Art + Gold + Holo' },
+  { id: 'out', label: 'OUT', icon: '🌌', desc: 'Artwork esce dalla carta' }
 ];
 
 // Livello di rarità di ogni variante (0 = base). Nei pacchetti la carta esce in
 // una di queste finiture e per ogni livello ATK e HP aumentano di +1.
-const VARIANT_LEVEL = { standard: 0, holo: 1, gold_foil: 2, full_art: 3, secret_holo: 4 };
+const VARIANT_LEVEL = { standard: 0, holo: 1, gold_foil: 2, full_art: 3, secret_holo: 4, out: 5 };
 // Pesi di drop di default quando si abilita una variante (più alta = più rara)
-const DEFAULT_VARIANT_WEIGHTS = { standard: 60, holo: 25, gold_foil: 10, full_art: 4, secret_holo: 1 };
+const DEFAULT_VARIANT_WEIGHTS = { standard: 60, holo: 25, gold_foil: 10, full_art: 4, secret_holo: 1, out: 0.1 };
 
 // Comprime un'immagine (data URL): ridimensiona il lato lungo a max `maxSize` px ed
 // esporta in WebP (mantiene la trasparenza) con la qualità data. Riduce il peso di
@@ -132,12 +133,22 @@ export function CardStudio({
     id: `card_${Date.now()}`,
     name: 'Mattolone',
     type: 'CREATURA',
+    set: 'gli_elettronici',
     cost: 7,
     atk: 2,
     hp: 9,
     rarity: 'rare',
     variant: 'full_art',
-    variantDrops: { standard: 60, holo: 25, gold_foil: 10, full_art: 4, secret_holo: 1 },
+    variantDrops: { standard: 60, holo: 25, gold_foil: 10, full_art: 4, secret_holo: 1, out: 0.1 },
+    effects: {
+      taunt: false,
+      thorns: 0,
+      divineShield: false,
+      turnTriggers: [],
+      conditionalCost: null,
+      battlecry: [],
+      deathrattle: []
+    },
     accentColor: '#d97706',
     imageUrl: '/illustrations/mattolone.png',
     imageScale: 1,
@@ -284,12 +295,22 @@ export function CardStudio({
       id: `card_${Date.now()}`,
       name: 'Nuova Carta',
       type: 'CREATURA',
+      set: 'gli_elettronici',
       cost: 3,
       atk: 3,
       hp: 4,
       rarity: 'rare',
       variant: 'standard',
       variantDrops: { standard: 100 },
+      effects: {
+        taunt: false,
+        thorns: 0,
+        divineShield: false,
+        turnTriggers: [],
+        conditionalCost: null,
+        battlecry: [],
+        deathrattle: []
+      },
       accentColor: '#2563eb',
       imageUrl: '/illustrations/tralalero_brainrot.png',
       imageScale: 1,
@@ -349,7 +370,7 @@ export function CardStudio({
     onSaveCard(editingCard);
     
     // Feedback sonoro fanfare per carte di alto rango
-    if (editingCard.rarity === 'legendary' || editingCard.rarity === 'mythic' || editingCard.variant === 'full_art' || editingCard.variant === 'secret_holo') {
+    if (editingCard.rarity === 'legendary' || editingCard.rarity === 'mythic' || editingCard.variant === 'full_art' || editingCard.variant === 'secret_holo' || editingCard.variant === 'out') {
       soundEngine.playLegendaryFanfare();
     }
   };
@@ -859,6 +880,21 @@ export function CardStudio({
               />
             </div>
 
+            {/* Set (Espansione) */}
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                Espansione (Set)
+              </label>
+              <select
+                value={editingCard.set || 'gli_elettronici'}
+                onChange={(e) => handleInputChange('set', e.target.value)}
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 font-semibold focus:outline-none focus:border-amber-400"
+              >
+                <option value="gli_elettronici">Gli Elettronici (Base)</option>
+                <option value="promo">Promo / Speciale</option>
+              </select>
+            </div>
+
             {/* Rarity */}
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
@@ -895,7 +931,7 @@ export function CardStudio({
           {/* Ability Text */}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
-              Descrizione Effetto & Meccaniche (Interpretato in tempo reale dal Bilanciatore)
+              Descrizione Narrativa (Per il giocatore e l'analizzatore di bilanciamento)
             </label>
             <textarea
               rows="2"
@@ -916,6 +952,246 @@ export function CardStudio({
               onChange={(e) => handleInputChange('flavorText', e.target.value)}
               className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-400 italic focus:outline-none focus:border-amber-400"
             />
+          </div>
+
+          {/* Editor Effetti a Flag (Fase D esteso) */}
+          <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-700">
+            <label className="block text-xs font-semibold uppercase tracking-wider text-amber-400 mb-2">
+              Configurazione Effetti Logici (FLAG)
+            </label>
+            
+            {/* Passivi base */}
+            <div className="flex flex-wrap gap-4 mb-4">
+              <label className="flex items-center gap-2 text-sm text-slate-200 cursor-pointer">
+                <input 
+                  type="checkbox"
+                  checked={editingCard.effects?.taunt || false}
+                  onChange={(e) => handleInputChange('effects', { ...(editingCard.effects || {}), taunt: e.target.checked })}
+                  className="accent-amber-500"
+                />
+                🛡️ Guardiano
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-200 cursor-pointer">
+                <input 
+                  type="checkbox"
+                  checked={editingCard.effects?.divineShield || false}
+                  onChange={(e) => handleInputChange('effects', { ...(editingCard.effects || {}), divineShield: e.target.checked })}
+                  className="accent-amber-500"
+                />
+                ✨ Scudo Divino
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-200 cursor-pointer" title="Danni inflitti a chi attacca questa carta">
+                🗡️ Spine
+                <input 
+                  type="number"
+                  min="0"
+                  value={editingCard.effects?.thorns || 0}
+                  onChange={(e) => handleInputChange('effects', { ...(editingCard.effects || {}), thorns: parseInt(e.target.value) || 0 })}
+                  className="w-12 bg-slate-800 text-xs p-1 ml-1 rounded border border-slate-600 text-center text-slate-200"
+                />
+              </label>
+            </div>
+
+            {/* Battlecry */}
+            <div className="flex flex-col gap-2 mb-4 pb-4 border-b border-slate-700/50">
+              <label className="text-[10px] text-slate-400 font-bold uppercase">Battlecry (Quando entra in gioco)</label>
+              <button 
+                type="button"
+                onClick={() => {
+                  const currentEffects = editingCard.effects || {};
+                  const newBc = [...(currentEffects.battlecry || []), { type: 'damage', value: 1 }];
+                  handleInputChange('effects', { ...currentEffects, battlecry: newBc });
+                }}
+                className="text-xs bg-slate-800 border border-slate-600 px-2 py-1 rounded w-max hover:bg-slate-700 text-slate-200"
+              >
+                + Aggiungi Effetto Entrata
+              </button>
+              {(editingCard.effects?.battlecry || []).map((bc, idx) => (
+                <div key={idx} className="flex gap-2 items-center bg-black/20 p-2 rounded flex-wrap">
+                   <select 
+                    value={bc.type} 
+                    onChange={(e) => {
+                      const newBc = [...editingCard.effects.battlecry];
+                      newBc[idx].type = e.target.value;
+                      if(e.target.value === 'summon_token') newBc[idx].tokenName = cards[0]?.name || '';
+                      handleInputChange('effects', { ...editingCard.effects, battlecry: newBc });
+                    }}
+                    className="bg-slate-800 text-xs p-1 rounded border border-slate-600 text-slate-200"
+                   >
+                     <option value="damage">Danno Diretto</option>
+                     <option value="heal">Cura Eroe</option>
+                     <option value="draw">Pesca Carta</option>
+                     <option value="steal_mana">Ruba Mana</option>
+                     <option value="steal_card">Ruba Carta in Mano</option>
+                     <option value="destroy_minion">Distruggi Creatura</option>
+                     <option value="summon_token">Evoca Carta/Token</option>
+                   </select>
+                   
+                   {bc.type === 'summon_token' ? (
+                     <select
+                       value={bc.tokenName || ''}
+                       onChange={(e) => {
+                         const newBc = [...editingCard.effects.battlecry];
+                         newBc[idx].tokenName = e.target.value;
+                         handleInputChange('effects', { ...editingCard.effects, battlecry: newBc });
+                       }}
+                       className="bg-slate-800 text-xs p-1 rounded border border-slate-600 text-slate-200 max-w-[150px]"
+                     >
+                       <option value="">-- Seleziona --</option>
+                       <option value="cliente_insoddisfatta">Cliente Insoddisfatta (Token)</option>
+                       {cards.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                     </select>
+                   ) : null}
+
+                   <span className="text-[10px] text-slate-400 ml-1">{bc.type === 'summon_token' ? 'Quantità:' : 'Valore:'}</span>
+                   <input 
+                    type="number" 
+                    value={bc.value || bc.count || 1} 
+                    onChange={(e) => {
+                      const newBc = [...editingCard.effects.battlecry];
+                      const val = parseInt(e.target.value) || 0;
+                      if (bc.type === 'summon_token') newBc[idx].count = val;
+                      else newBc[idx].value = val;
+                      handleInputChange('effects', { ...editingCard.effects, battlecry: newBc });
+                    }}
+                    className="w-16 bg-slate-800 text-xs p-1 rounded border border-slate-600 text-center text-slate-200"
+                   />
+                   <button
+                    onClick={() => {
+                      const newBc = [...editingCard.effects.battlecry];
+                      newBc.splice(idx, 1);
+                      handleInputChange('effects', { ...editingCard.effects, battlecry: newBc });
+                    }}
+                    className="text-rose-500 hover:text-rose-300 p-1 ml-auto"
+                   >
+                     <Trash2 className="w-4 h-4" />
+                   </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Turn Triggers */}
+            <div className="flex flex-col gap-2 mb-4 pb-4 border-b border-slate-700/50">
+              <label className="text-[10px] text-slate-400 font-bold uppercase">Effetti di Turno (Es. Danno a turno)</label>
+              <button 
+                type="button"
+                onClick={() => {
+                  const currentEffects = editingCard.effects || {};
+                  const newTt = [...(currentEffects.turnTriggers || []), { type: 'hero_burn', value: 1 }];
+                  handleInputChange('effects', { ...currentEffects, turnTriggers: newTt });
+                }}
+                className="text-xs bg-slate-800 border border-slate-600 px-2 py-1 rounded w-max hover:bg-slate-700 text-slate-200"
+              >
+                + Aggiungi Effetto di Turno
+              </button>
+              {(editingCard.effects?.turnTriggers || []).map((tt, idx) => (
+                <div key={idx} className="flex gap-2 items-center bg-black/20 p-2 rounded flex-wrap">
+                   <select 
+                    value={tt.type} 
+                    onChange={(e) => {
+                      const newTt = [...editingCard.effects.turnTriggers];
+                      newTt[idx].type = e.target.value;
+                      if(e.target.value === 'spawn_token') newTt[idx].tokenName = cards[0]?.name || '';
+                      handleInputChange('effects', { ...editingCard.effects, turnTriggers: newTt });
+                    }}
+                    className="bg-slate-800 text-xs p-1 rounded border border-slate-600 text-slate-200"
+                   >
+                     <option value="hero_burn">Danno Eroe Nemico</option>
+                     <option value="spawn_token">Evoca Carta/Token</option>
+                   </select>
+
+                   {tt.type === 'spawn_token' ? (
+                     <select
+                       value={tt.tokenName || ''}
+                       onChange={(e) => {
+                         const newTt = [...editingCard.effects.turnTriggers];
+                         newTt[idx].tokenName = e.target.value;
+                         handleInputChange('effects', { ...editingCard.effects, turnTriggers: newTt });
+                       }}
+                       className="bg-slate-800 text-xs p-1 rounded border border-slate-600 text-slate-200 max-w-[150px]"
+                     >
+                       <option value="">-- Seleziona --</option>
+                       <option value="cliente_insoddisfatta">Cliente Insoddisfatta (Token)</option>
+                       {cards.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                     </select>
+                   ) : null}
+
+                   <span className="text-[10px] text-slate-400 ml-1">{tt.type === 'spawn_token' ? 'Quantità:' : 'Danni:'}</span>
+                   <input 
+                    type="number" 
+                    value={tt.value || tt.count || 1} 
+                    onChange={(e) => {
+                      const newTt = [...editingCard.effects.turnTriggers];
+                      const val = parseInt(e.target.value) || 0;
+                      if (tt.type === 'spawn_token') newTt[idx].count = val;
+                      else newTt[idx].value = val;
+                      handleInputChange('effects', { ...editingCard.effects, turnTriggers: newTt });
+                    }}
+                    className="w-16 bg-slate-800 text-xs p-1 rounded border border-slate-600 text-center text-slate-200"
+                   />
+                   <button
+                    onClick={() => {
+                      const newTt = [...editingCard.effects.turnTriggers];
+                      newTt.splice(idx, 1);
+                      handleInputChange('effects', { ...editingCard.effects, turnTriggers: newTt });
+                    }}
+                    className="text-rose-500 hover:text-rose-300 p-1 ml-auto"
+                   >
+                     <Trash2 className="w-4 h-4" />
+                   </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Conditional Cost */}
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] text-slate-400 font-bold uppercase">Costo Mana Condizionale</label>
+              <div className="flex gap-2 items-center bg-black/20 p-2 rounded">
+                 <input 
+                  type="checkbox"
+                  checked={!!editingCard.effects?.conditionalCost}
+                  onChange={(e) => {
+                    const currentEffects = editingCard.effects || {};
+                    if (e.target.checked) {
+                      handleInputChange('effects', { ...currentEffects, conditionalCost: { hpThresholdPercent: 0.5, newCost: 5 } });
+                    } else {
+                      handleInputChange('effects', { ...currentEffects, conditionalCost: null });
+                    }
+                  }}
+                  className="accent-amber-500"
+                 />
+                 <span className="text-xs text-slate-200">Sconto se HP bassi</span>
+                 
+                 {editingCard.effects?.conditionalCost && (
+                   <div className="flex gap-2 items-center ml-2 border-l border-slate-600 pl-2">
+                     <span className="text-xs text-slate-300 ml-2">Se HP &le;</span>
+                     <select
+                       value={editingCard.effects.conditionalCost.hpThresholdPercent}
+                       onChange={(e) => {
+                         const cost = { ...editingCard.effects.conditionalCost, hpThresholdPercent: parseFloat(e.target.value) };
+                         handleInputChange('effects', { ...editingCard.effects, conditionalCost: cost });
+                       }}
+                       className="bg-slate-800 text-xs p-1 rounded border border-slate-600 text-slate-200"
+                     >
+                       <option value={0.75}>75%</option>
+                       <option value={0.5}>50%</option>
+                       <option value={0.25}>25%</option>
+                     </select>
+                     <span className="text-xs text-slate-300">Costo =</span>
+                     <input
+                       type="number"
+                       value={editingCard.effects.conditionalCost.newCost}
+                       onChange={(e) => {
+                         const cost = { ...editingCard.effects.conditionalCost, newCost: parseInt(e.target.value) || 0 };
+                         handleInputChange('effects', { ...editingCard.effects, conditionalCost: cost });
+                       }}
+                       className="w-12 bg-slate-800 text-xs p-1 rounded border border-slate-600 text-center text-slate-200"
+                     />
+                   </div>
+                 )}
+              </div>
+            </div>
+
           </div>
 
           {/* ═════════════════════════════════════════════════════════════════════════ */}

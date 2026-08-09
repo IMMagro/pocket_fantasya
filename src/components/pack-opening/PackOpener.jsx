@@ -30,10 +30,11 @@ export function rollCardFinishVariant(baseCard) {
     else if (roll < 0.78) variant = 'holo';
     else variant = 'standard';
   } else if (rarity === 'rare') {
-    if (roll < 0.01) variant = 'secret_holo';
-    else if (roll < 0.06) variant = 'full_art';
-    else if (roll < 0.16) variant = 'gold_foil';
-    else if (roll < 0.46) variant = 'holo';
+    if (roll < 0.0005) variant = 'out';
+    else if (roll < 0.002) variant = 'secret_holo';
+    else if (roll < 0.01) variant = 'full_art';
+    else if (roll < 0.03) variant = 'gold_foil';
+    else if (roll < 0.08) variant = 'holo';
     else variant = 'standard';
   } else {
     // Common
@@ -44,7 +45,7 @@ export function rollCardFinishVariant(baseCard) {
     else variant = 'standard';
   }
 
-  // If base card already had full_art set in creator, keep it or upgrade to secret_holo
+  // If base card already had full_art set in creator, keep it or upgrade to secret_holo/out
   if (baseCard.variant === 'full_art' && variant === 'standard') {
     variant = 'full_art';
   } else if (baseCard.variant && variant === 'standard') {
@@ -54,7 +55,8 @@ export function rollCardFinishVariant(baseCard) {
   return {
     ...baseCard,
     variant,
-    isFullArt: variant === 'full_art' || variant === 'secret_holo'
+    isFullArt: variant === 'full_art' || variant === 'secret_holo' || variant === 'out',
+    isOut: variant === 'out'
   };
 }
 
@@ -127,7 +129,7 @@ export function PackOpener({ availableCards, onAddCardsToCollection }) {
     setRevealedIndices(updated);
 
     const card = pulledCards[index];
-    const isSpecialVariant = card && (card.variant === 'full_art' || card.variant === 'secret_holo' || card.variant === 'gold_foil' || card.variant === 'holo');
+    const isSpecialVariant = card && (card.variant === 'full_art' || card.variant === 'secret_holo' || card.variant === 'out' || card.variant === 'gold_foil' || card.variant === 'holo');
     const isHighRarity = card && (card.rarity === 'legendary' || card.rarity === 'mythic' || card.rarity === 'epic');
 
     if (isSpecialVariant || isHighRarity) {
