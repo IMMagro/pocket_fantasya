@@ -268,7 +268,7 @@ function HandCard({ card, effectiveCost, isDiscounted, affordable, index = 0, to
 }
 
 // ── Barra Eroe con effetti di danno e suoni ──────────────────────────────────
-function HeroBar({ name, hp, shield, isOpponent, flash, hasSlash, hasSparks, hasShieldBreak, hasSpell, hasHeal, floatingText, mana, maxMana }: any) {
+function HeroBar({ name, hp, shield, isOpponent, flash, hasSlash, hasSparks, hasShieldBreak, hasSpell, hasHeal, floatingText, mana, maxMana, maxHp = 30 }: any) {
   const col = isOpponent ? '#f87171' : '#60a5fa'
   return (
     <div style={{ display: 'flex', alignItems: 'center', padding: '9px 16px', flexShrink: 0, background: `rgba(${isOpponent ? '248,113,113' : '96,165,250'},${flash ? '0.24' : '0.04'})`, borderTop: isOpponent ? 'none' : '1px solid rgba(96,165,250,0.1)', borderBottom: isOpponent ? '1px solid rgba(248,113,113,0.1)' : 'none', transition: 'background 0.25s ease', position: 'relative' }}>
@@ -311,11 +311,11 @@ function HeroBar({ name, hp, shield, isOpponent, flash, hasSlash, hasSparks, has
           <div className="font-cinzel" style={{ fontSize: 11, color: col, letterSpacing: '0.06em' }}>{name}</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             {shield > 0 && <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, color: '#93c5fd', fontWeight: 700 }}><Icon.shield style={{ width: 10, height: 10 }} />{shield}</span>}
-            <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: isOpponent ? '#f87171' : '#4ade80', fontWeight: 700 }}><Icon.shield style={{ width: 11, height: 11 }} />{hp} / 30</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: isOpponent ? '#f87171' : '#4ade80', fontWeight: 700 }}><Icon.shield style={{ width: 11, height: 11 }} />{hp} / {maxHp}</span>
           </div>
         </div>
         <div style={{ height: 5, background: 'rgba(255,255,255,0.08)', borderRadius: 3, overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: `${Math.max(0, (hp / 30) * 100)}%`, background: isOpponent ? 'linear-gradient(90deg,#dc2626,#f87171)' : 'linear-gradient(90deg,#16a34a,#4ade80)', borderRadius: 3, transition: 'width 0.5s ease', boxShadow: `0 0 8px ${col}66` }} />
+          <div style={{ height: '100%', width: `${Math.max(0, (hp / (maxHp || 30)) * 100)}%`, background: isOpponent ? 'linear-gradient(90deg,#dc2626,#f87171)' : 'linear-gradient(90deg,#16a34a,#4ade80)', borderRadius: 3, transition: 'width 0.5s ease', boxShadow: `0 0 8px ${col}66` }} />
         </div>
       </div>
     </div>
@@ -342,7 +342,7 @@ function CardPile({ count, label, kind, pos }: { count: number; label: string; k
   )
 }
 
-export function RealArena() {
+export function RealArena({ mission }: { mission?: any } = {}) {
   const [screen, setScreen] = useState<'lobby' | 'battle'>('lobby')
   const [lobbyMode, setLobbyMode] = useState<'menu' | 'host' | 'join'>('menu')
   const [gameState, setGameState] = useState<any>(null)
@@ -557,8 +557,12 @@ export function RealArena() {
 
       if (!rewardGivenRef.current) {
         rewardGivenRef.current = true
-        const reward = iWon ? 150 : 30
-        addGold(reward)
+        if (mission && mission.onComplete) {
+          // In missione: l'App gestisce progresso, monete e carta speciale
+          mission.onComplete(iWon)
+        } else {
+          addGold(iWon ? 150 : 30)
+        }
       }
     }
   }, [gameState?.player?.hp, gameState?.opponent?.hp, gameState?.winner, screen, meIsHost])
@@ -583,6 +587,9 @@ export function RealArena() {
   const leaveMatch = () => {
     if (gameSocket.current) { gameSocket.current.disconnect(); gameSocket.current = null }
     soundEngine.stopBattleMusic()
+    setMenuOpen(false)
+    // In missione: torna alla campagna (l'App smonta l'arena, niente riavvio automatico)
+    if (mission && mission.onExit) { mission.onExit(); return }
     setGameState(null); setScreen('lobby'); setLobbyMode('menu')
     setIsMultiplayer(false); setIsHost(true)
     setConnecting(false); setConnError(null); setOppLeft(false)
@@ -613,6 +620,30 @@ export function RealArena() {
     setSelectedAttackerId(null)
     setScreen('battle')
   }
+
+  // Avvia una battaglia di missione (mazzo AI dell'espansione, HP eroe della missione)
+  const startMission = () => {
+    if (myDeck.deck.length < 2) return
+    setIsMultiplayer(false); setIsHost(true)
+    rewardGivenRef.current = false
+    const aiDeck = buildAiDeck(cards)
+    const gs = createInitialGameState(myDeck.deck, aiDeck.length >= 2 ? aiDeck : cards, 'Tu', mission?.aiName || 'AI')
+    const aiHp = mission?.aiHp || 30
+    gs.opponent.hp = aiHp
+    gs.opponent.maxHp = aiHp
+    prevHp.current = { p: 30, o: aiHp }
+    setGameState(gs)
+    setSelectedAttackerId(null)
+    setScreen('battle')
+  }
+
+  // In modalità missione salta la lobby e avvia direttamente lo scontro
+  useEffect(() => {
+    if (mission && screen === 'lobby' && cards.length > 0 && myDeck.deck.length >= 2 && !gameState) {
+      startMission()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mission, screen, cards, myDeck.deck.length])
 
   // Host: crea la stanza, attende l'avversario, poi genera e sincronizza lo stato.
   const startHost = () => {
@@ -1057,6 +1088,7 @@ export function RealArena() {
         <HeroBar
           name={o.name}
           hp={o.hp}
+          maxHp={o.maxHp || 30}
           shield={o.shield}
           isOpponent
           flash={oFlash}
@@ -1256,18 +1288,20 @@ export function RealArena() {
               {iWon ? "Hai annientato l'Eroe avversario!" : winner === 'draw' ? 'Entrambi gli Eroi sono caduti.' : 'I tuoi HP sono a zero. Riprova!'}
             </div>
 
-            {/* Badge Ricompensa Monete */}
+            {/* Badge Ricompensa */}
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 20px', background: 'rgba(240,165,0,0.15)', border: '1px solid rgba(240,165,0,0.4)', borderRadius: 20, color: '#f0a500', fontFamily: 'Cinzel, serif', fontWeight: 800, fontSize: 13, marginBottom: 28, boxShadow: '0 0 20px rgba(240,165,0,0.3)' }}>
-              <span>🪙</span> Ricompensa Partita: {iWon ? '+150 Monete' : '+30 Monete'}
+              <span>{mission ? '🎯' : '🪙'}</span> {mission
+                ? (iWon ? `Missione superata! +${mission.reward} monete${mission.final ? ' + carta speciale ✦' : ''}` : 'Missione fallita — riprova!')
+                : `Ricompensa Partita: ${iWon ? '+150 Monete' : '+30 Monete'}`}
             </div>
 
             <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
               {!isMultiplayer && (
-                <button onClick={startSolo} className="btn-primary font-cinzel" style={{ padding: '13px 36px', borderRadius: 12, background: 'linear-gradient(135deg,#f0a500,#d4842a)', border: 'none', color: '#06080f', fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer', boxShadow: '0 8px 28px rgba(240,165,0,0.4)' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Icon.sword style={{ width: 13, height: 13 }} /> Rivincita</span>
+                <button onClick={() => (mission ? startMission() : startSolo())} className="btn-primary font-cinzel" style={{ padding: '13px 36px', borderRadius: 12, background: 'linear-gradient(135deg,#f0a500,#d4842a)', border: 'none', color: '#06080f', fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer', boxShadow: '0 8px 28px rgba(240,165,0,0.4)' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Icon.sword style={{ width: 13, height: 13 }} /> {mission ? 'Riprova' : 'Rivincita'}</span>
                 </button>
               )}
-              <button onClick={leaveMatch} className="font-cinzel" style={{ padding: '13px 28px', borderRadius: 12, background: 'transparent', border: '1px solid rgba(240,165,0,0.3)', color: 'rgba(232,220,200,0.6)', fontSize: 12, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}>Menu</button>
+              <button onClick={leaveMatch} className="font-cinzel" style={{ padding: '13px 28px', borderRadius: 12, background: 'transparent', border: '1px solid rgba(240,165,0,0.3)', color: 'rgba(232,220,200,0.6)', fontSize: 12, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}>{mission ? 'Campagna' : 'Menu'}</button>
             </div>
           </div>
         </div>

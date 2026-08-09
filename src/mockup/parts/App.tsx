@@ -8,6 +8,9 @@ import { RealCollection } from './RealCollection'
 import { useRealCards, rarInfo, REAL_RARITY } from '../realCards'
 import { usePlayerEconomy, usePlayerInventory, getBaseCardKey } from '../playerState'
 import { TactileCard } from '../../components/card/TactileCard'
+import { Missions } from './Missions'
+import { getMission } from '../campaign'
+import { usePlayerMissions } from '../questState'
 
 // Ordine di rarità (alto → basso) per scegliere la carta più prestigiosa
 const RARITY_RANK: Record<string, number> = { mythic: 4, legendary: 3, epic: 2, rare: 1, common: 0 }
@@ -163,8 +166,32 @@ export default function App() {
 
   // Carte reali pubblicate dallo Studio (sync live)
   const { cards } = useRealCards()
-  const { gold } = usePlayerEconomy()
-  const { inventory } = usePlayerInventory()
+  const { gold, addGold } = usePlayerEconomy()
+  const { inventory, addCardsToInventory } = usePlayerInventory()
+  const { completeMission } = usePlayerMissions()
+  const [activeMissionId, setActiveMissionId] = useState<number | null>(null)
+
+  // Config della missione attiva passata all'Arena (avvio + ricompensa)
+  const missionConfig = useMemo(() => {
+    if (activeMissionId == null) return undefined
+    const m = getMission(activeMissionId)
+    if (!m) return undefined
+    return {
+      id: m.id, name: m.name, aiName: m.aiName, aiHp: m.aiHp, final: m.final, reward: m.reward,
+      onExit: () => setActiveMissionId(null),
+      onComplete: (win: boolean) => {
+        if (!win) return
+        const isNew = completeMission(m.id)
+        addGold(m.reward)
+        // Missione finale: consegna una carta speciale (la più rara del catalogo) alla prima vittoria
+        if (m.final && isNew && cards.length) {
+          const special = [...cards].sort((a, b) => (RARITY_RANK[b.rarity] ?? 0) - (RARITY_RANK[a.rarity] ?? 0))[0]
+          if (special) addCardsToInventory([special])
+        }
+      },
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMissionId, cards])
 
   // Calcolo carte base e scoperte
   const baseGroups = useMemo(() => {
@@ -211,7 +238,7 @@ export default function App() {
     return () => clearInterval(t)
   }, [])
 
-  const isFull = activeNav === 'deck' || activeNav === 'packs' || activeNav === 'collection' || activeNav === 'arena'
+  const isFull = activeNav === 'deck' || activeNav === 'packs' || activeNav === 'collection' || activeNav === 'arena' || activeNav === 'missions'
 
   return (
     <div style={{ minHeight: '100vh', height: isFull ? '100vh' : undefined, background: '#06080f', position: 'relative', overflow: 'hidden' }}>
@@ -292,6 +319,7 @@ export default function App() {
           <NavBtn icon={<Icon.collection style={{ width: 14, height: 14 }} />} label="Collezione" active={activeNav === 'collection'} onClick={() => setActiveNav('collection')} />
           <NavBtn icon={<Icon.cards style={{ width: 14, height: 14 }} />} label="Deck Builder" active={activeNav === 'deck'} onClick={() => setActiveNav('deck')} />
           <NavBtn icon={<Icon.sword style={{ width: 14, height: 14 }} />} label="Arena" active={activeNav === 'arena'} onClick={() => setActiveNav('arena')} />
+          <NavBtn icon={<Icon.trophy style={{ width: 14, height: 14 }} />} label="Campagna" active={activeNav === 'missions'} onClick={() => { setActiveMissionId(null); setActiveNav('missions') }} />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <GoldBadge gold={gold} onOpenShop={() => setActiveNav('packs')} />
@@ -310,6 +338,11 @@ export default function App() {
       {activeNav === 'packs' && <div style={{ position: 'relative', zIndex: 5 }}><PackOpening /></div>}
       {activeNav === 'collection' && <div style={{ position: 'relative', zIndex: 5 }}><RealCollection /></div>}
       {activeNav === 'arena' && <div style={{ position: 'relative', zIndex: 5 }}><RealArena /></div>}
+      {activeNav === 'missions' && <div style={{ position: 'relative', zIndex: 5 }}>
+        {missionConfig
+          ? <RealArena mission={missionConfig} />
+          : <Missions onPlay={(id) => setActiveMissionId(id)} />}
+      </div>}
 
       {activeNav === 'home' && <main style={{ position: 'relative', zIndex: 5, maxWidth: 1100, margin: '0 auto', padding: '60px 32px 80px' }}>
         <div className="slide-up-1" style={{ display: 'flex', justifyContent: 'center', marginBottom: 32 }}>
@@ -345,7 +378,7 @@ export default function App() {
         <div className="slide-up-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 48 }}>
           <ModeCard icon={<Icon.sword style={{ width: 36, height: 36, color: '#f0a500' }} />} title="Arena Battaglia" desc="Sfida giocatori in tempo reale. Scala i ranghi fino al Diamante." tag="PvP Ranked" accent="#f0a500" delay="1" onClick={() => setActiveNav('arena')} />
           <ModeCard icon={<Icon.trophy style={{ width: 36, height: 36, color: '#a78bfa' }} />} title="Torneo Stagionale" desc="Partecipa ai tornei settimanali per vincere carte esclusive." tag="Nuovo evento" accent="#a78bfa" delay="2" />
-          <ModeCard icon={<Icon.book style={{ width: 36, height: 36, color: '#6ee7b7' }} />} title="Campagna" desc="Affronta la storia di Card Clash attraverso 8 capitoli epici." tag="Solo" accent="#6ee7b7" delay="3" />
+          <ModeCard icon={<Icon.book style={{ width: 36, height: 36, color: '#6ee7b7' }} />} title="Campagna" desc="Affronta le 10 missioni de Gli Elettronici e vinci la carta speciale." tag="Solo" accent="#6ee7b7" delay="3" onClick={() => { setActiveMissionId(null); setActiveNav('missions') }} />
           <ModeCard icon={<Icon.bot style={{ width: 36, height: 36, color: '#60a5fa' }} />} title="Allenamento" desc="Metti alla prova il tuo mazzo contro l'IA senza rischiare il rango." accent="#60a5fa" delay="4" onClick={() => setActiveNav('arena')} />
         </div>
         <div className="slide-up-5" style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: 16 }}>
