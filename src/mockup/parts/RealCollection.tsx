@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Icon } from '../NewUI'
 import { useRealCards, RealCardTile, RealBigCard, LockedCardTile, REAL_RARITY, rarInfo } from '../realCards'
-import { usePlayerInventory, getBaseCardKey, getBaseCardName } from '../playerState'
+import { usePlayerInventory, usePlayerEconomy, getCardLevelInfo, applyCardLevelStats, getBaseCardKey, getBaseCardName } from '../playerState'
 import { soundEngine } from '../../engine/soundEngine'
 
 const RARITY_ORDER: Record<string, number> = { mythic: 0, legendary: 1, epic: 2, rare: 3, common: 4 }
@@ -41,7 +41,9 @@ function DetailModal({
   group: BaseCardGroup
   onClose: () => void 
 }) {
-  const { hasCard, getCardQuantity } = usePlayerInventory()
+  const { inventory, hasCard, getCardQuantity, upgradeCard } = usePlayerInventory()
+  const { gold } = usePlayerEconomy()
+  const [levelUpSuccess, setLevelUpSuccess] = useState(false)
   
   // Trova la prima variante posseduta, oppure la standard
   const initialVariant = useMemo(() => {
@@ -61,14 +63,59 @@ function DetailModal({
   const rar = rarInfo(selectedVariant.rarity)
   const varMeta = VARIANT_LABELS[selectedVariant.variant || 'standard'] || { label: 'Standard', icon: '📜' }
 
+  // Calcolo dati livello e progressione
+  const lvlInfo = useMemo(() => {
+    return getCardLevelInfo(selectedVariant, inventory, gold)
+  }, [selectedVariant, inventory, gold])
+
+  const cardWithLevel = useMemo(() => {
+    return applyCardLevelStats(selectedVariant, lvlInfo.level)
+  }, [selectedVariant, lvlInfo.level])
+
+  const handleUpgrade = () => {
+    const res = upgradeCard(selectedVariant)
+    if (res.success) {
+      soundEngine.playLevelUp()
+      setLevelUpSuccess(true)
+      setTimeout(() => setLevelUpSuccess(false), 2500)
+    }
+  }
+
+  const isCreature = (selectedVariant.type || 'CREATURA').toUpperCase() === 'CREATURA'
+
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'fadeIn 0.2s ease both' }}>
-      <div onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: 32, alignItems: 'center', animation: 'slide-up 0.35s cubic-bezier(0.34,1.56,0.64,1) both', maxWidth: 840, width: '92%' }}>
+      <div onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: 32, alignItems: 'center', animation: 'slide-up 0.35s cubic-bezier(0.34,1.56,0.64,1) both', maxWidth: 880, width: '94%', maxHeight: '92vh', overflowY: 'auto' }}>
         
-        {/* Anteprima Carta (Grande o Sagoma Bloccata) */}
-        <div style={{ flexShrink: 0 }}>
+        {/* Anteprima Carta (Grande con statistiche potenziate o Sagoma Bloccata) */}
+        <div style={{ flexShrink: 0, position: 'relative' }}>
           {isSelectedOwned ? (
-            <RealBigCard card={selectedVariant} />
+            <div style={{ position: 'relative' }}>
+              <RealBigCard card={cardWithLevel} />
+              
+              {/* Badge Livello Grande in alto */}
+              <div style={{
+                position: 'absolute',
+                top: 10,
+                left: 10,
+                background: 'linear-gradient(135deg, #1e293b, #0f172a)',
+                border: '1.5px solid #38bdf8',
+                borderRadius: 12,
+                padding: '4px 10px',
+                color: '#38bdf8',
+                fontFamily: 'Cinzel, serif',
+                fontSize: 12,
+                fontWeight: 900,
+                boxShadow: '0 0 16px rgba(56,189,248,0.5)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                zIndex: 40,
+              }}>
+                <span style={{ color: '#f0a500' }}>★</span>
+                <span>LIV. {lvlInfo.level}</span>
+              </div>
+            </div>
           ) : (
             <LockedCardTile 
               size="lg" 
@@ -78,29 +125,37 @@ function DetailModal({
           )}
         </div>
 
-        {/* Scheda Dettagli & Switcher Varianti */}
+        {/* Scheda Dettagli & Upgrade Stile Clash Royale */}
         <div style={{ flex: 1, background: 'rgba(10,13,22,0.96)', border: '1px solid rgba(240,165,0,0.2)', borderRadius: 20, padding: '24px 22px', boxShadow: '0 20px 50px rgba(0,0,0,0.8)' }}>
           
           {/* Header */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
             <div>
-              <div className="font-cinzel" style={{ fontSize: (isSelectedOwned ? selectedVariant.name : group.baseName).length > 22 ? 15 : 18, fontWeight: 700, color: isSelectedOwned ? (selectedVariant.accentColor || rar.color) : 'rgba(232,220,200,0.4)', letterSpacing: '0.04em', textTransform: 'uppercase', lineHeight: 1.2 }}>
+              <div className="font-cinzel" style={{ fontSize: (isSelectedOwned ? selectedVariant.name : group.baseName).length > 22 ? 16 : 20, fontWeight: 800, color: isSelectedOwned ? (selectedVariant.accentColor || rar.color) : 'rgba(232,220,200,0.4)', letterSpacing: '0.04em', textTransform: 'uppercase', lineHeight: 1.2 }}>
                 {isSelectedOwned ? selectedVariant.name : `??? - ${group.baseName}`}
               </div>
-              <div style={{ fontSize: 11, color: 'rgba(232,220,200,0.4)', marginTop: 2 }}>
-                {selectedVariant.type} · Carta #{String(group.number).padStart(2, '0')}
+              <div style={{ fontSize: 11, color: 'rgba(232,220,200,0.4)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>{selectedVariant.type}</span>
+                <span>•</span>
+                <span>Carta #{String(group.number).padStart(2, '0')}</span>
+                {isSelectedOwned && (
+                  <>
+                    <span>•</span>
+                    <span style={{ color: '#38bdf8', fontWeight: 700 }}>Livello {lvlInfo.level}</span>
+                  </>
+                )}
               </div>
             </div>
             {isSelectedOwned && (
-              <div style={{ padding: '3px 10px', background: 'rgba(240,165,0,0.15)', border: '1px solid rgba(240,165,0,0.4)', borderRadius: 12, fontSize: 11, color: '#f0a500', fontFamily: 'Cinzel, serif', fontWeight: 700 }}>
-                Possedute: ×{ownedQty}
+              <div style={{ padding: '4px 12px', background: 'rgba(240,165,0,0.15)', border: '1px solid rgba(240,165,0,0.4)', borderRadius: 12, fontSize: 11, color: '#f0a500', fontFamily: 'Cinzel, serif', fontWeight: 800 }}>
+                Copie: ×{ownedQty}
               </div>
             )}
           </div>
 
           {/* Selettore Varianti */}
-          <div style={{ marginTop: 14, marginBottom: 16 }}>
-            <div className="font-cinzel" style={{ fontSize: 10, fontWeight: 700, color: 'rgba(232,220,200,0.4)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8 }}>
+          <div style={{ marginTop: 12, marginBottom: 14 }}>
+            <div className="font-cinzel" style={{ fontSize: 9.5, fontWeight: 700, color: 'rgba(232,220,200,0.4)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 6 }}>
               Varianti ({group.ownedVariants.length}/{group.variants.length} Trovate)
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -117,7 +172,7 @@ function DetailModal({
                       soundEngine.playButtonClick()
                     }}
                     style={{
-                      padding: '6px 10px',
+                      padding: '5px 9px',
                       borderRadius: 8,
                       border: isCur 
                         ? '1px solid #f0a500' 
@@ -154,25 +209,139 @@ function DetailModal({
 
           {isSelectedOwned ? (
             <>
-              {/* Statistiche Carta */}
-              {selectedVariant.type === 'CREATURA' && (
-                <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
-                  {[
-                    { l: 'ATK', v: selectedVariant.atk, c: '#f87171', I: Icon.sword },
-                    { l: 'HP', v: selectedVariant.hp, c: '#4ade80', I: Icon.shield },
-                    { l: 'Mana', v: selectedVariant.cost, c: '#60a5fa', I: Icon.droplet }
-                  ].map(s => (
-                    <div key={s.l} style={{ flex: 1, padding: '8px 6px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, textAlign: 'center' }}>
-                      <s.I style={{ width: 13, height: 13, color: s.c, margin: '0 auto 3px', display: 'block' }} />
-                      <div className="font-cinzel" style={{ fontSize: 15, fontWeight: 700, color: s.c }}>{s.v}</div>
-                      <div style={{ fontSize: 8, color: 'rgba(232,220,200,0.35)', letterSpacing: '0.06em' }}>{s.l}</div>
-                    </div>
-                  ))}
+              {/* ================= SEZIONE POTENZIAMENTO CLASH ROYALE ================= */}
+              <div style={{
+                background: 'linear-gradient(145deg, rgba(15,23,42,0.9), rgba(30,41,59,0.7))',
+                border: '1.5px solid rgba(56,189,248,0.3)',
+                borderRadius: 14,
+                padding: '14px 16px',
+                marginBottom: 14,
+                boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 14 }}>⚡</span>
+                    <span className="font-cinzel" style={{ fontSize: 11, fontWeight: 800, color: '#38bdf8', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                      Progresso Livello Carta
+                    </span>
+                  </div>
+                  <div className="font-cinzel" style={{ fontSize: 11, fontWeight: 800, color: lvlInfo.maxLevelReached ? '#f0a500' : '#e8dcc8' }}>
+                    {lvlInfo.maxLevelReached ? '★ LIVELLO MAX' : `Liv. ${lvlInfo.level} ➔ Liv. ${lvlInfo.level + 1}`}
+                  </div>
                 </div>
-              )}
+
+                {/* Barra di Progresso Copie */}
+                {!lvlInfo.maxLevelReached && (
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontFamily: 'Cinzel, serif', color: 'rgba(232,220,200,0.6)', marginBottom: 4 }}>
+                      <span>Copie doppie per il potenziamento</span>
+                      <strong style={{ color: lvlInfo.availableDuplicateCopies >= lvlInfo.requiredCopies ? '#10b981' : '#f0a500' }}>
+                        {lvlInfo.availableDuplicateCopies} / {lvlInfo.requiredCopies} Copie
+                      </strong>
+                    </div>
+                    <div style={{ height: 10, background: 'rgba(0,0,0,0.6)', borderRadius: 5, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)', position: 'relative' }}>
+                      <div style={{
+                        width: `${lvlInfo.progressPercent}%`,
+                        height: '100%',
+                        background: lvlInfo.availableDuplicateCopies >= lvlInfo.requiredCopies
+                          ? 'linear-gradient(90deg, #10b981, #34d399)'
+                          : 'linear-gradient(90deg, #0284c7, #38bdf8)',
+                        transition: 'width 0.4s ease',
+                      }} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Confronto Statistiche Potenziate */}
+                {isCreature && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
+                    {/* ATK */}
+                    <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 8, padding: '6px 8px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 8.5, color: 'rgba(232,220,200,0.4)', letterSpacing: '0.06em' }}>ATTACCO</div>
+                      <div className="font-cinzel" style={{ fontSize: 14, fontWeight: 800, color: '#f87171' }}>
+                        {lvlInfo.effectiveAtk}
+                        {!lvlInfo.maxLevelReached && lvlInfo.nextEffectiveAtk > lvlInfo.effectiveAtk && (
+                          <span style={{ color: '#10b981', fontSize: 12, marginLeft: 4 }}>➔ {lvlInfo.nextEffectiveAtk} (+1)</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* HP */}
+                    <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: 8, padding: '6px 8px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 8.5, color: 'rgba(232,220,200,0.4)', letterSpacing: '0.06em' }}>SALUTE (HP)</div>
+                      <div className="font-cinzel" style={{ fontSize: 14, fontWeight: 800, color: '#4ade80' }}>
+                        {lvlInfo.effectiveHp}
+                        {!lvlInfo.maxLevelReached && (
+                          <span style={{ color: '#10b981', fontSize: 12, marginLeft: 4 }}>➔ {lvlInfo.nextEffectiveHp} (+1)</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Mana */}
+                    <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(96,165,250,0.2)', borderRadius: 8, padding: '6px 8px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 8.5, color: 'rgba(232,220,200,0.4)', letterSpacing: '0.06em' }}>MANA</div>
+                      <div className="font-cinzel" style={{ fontSize: 14, fontWeight: 800, color: '#60a5fa' }}>
+                        {selectedVariant.cost ?? 1}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Pulsante di Upgrade */}
+                {lvlInfo.maxLevelReached ? (
+                  <div style={{ textAlign: 'center', padding: '8px', background: 'rgba(240,165,0,0.1)', border: '1px solid rgba(240,165,0,0.3)', borderRadius: 8, color: '#f0a500', fontSize: 10, fontFamily: 'Cinzel, serif', fontWeight: 800 }}>
+                    👑 QUESTA CARTA HA RAGGIUNTO IL LIVELLO MASSIMO!
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleUpgrade}
+                    disabled={!lvlInfo.canUpgrade}
+                    className="font-cinzel"
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      borderRadius: 10,
+                      border: lvlInfo.canUpgrade ? '1.5px solid #34d399' : '1px solid rgba(255,255,255,0.08)',
+                      background: lvlInfo.canUpgrade 
+                        ? 'linear-gradient(135deg, #10b981, #059669)' 
+                        : 'rgba(255,255,255,0.04)',
+                      color: lvlInfo.canUpgrade ? '#ffffff' : 'rgba(232,220,200,0.35)',
+                      fontSize: 11,
+                      fontWeight: 800,
+                      letterSpacing: '0.06em',
+                      cursor: lvlInfo.canUpgrade ? 'pointer' : 'not-allowed',
+                      boxShadow: lvlInfo.canUpgrade ? '0 0 16px rgba(16,185,129,0.5)' : 'none',
+                      transition: 'all 0.2s ease',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                    }}
+                  >
+                    {lvlInfo.canUpgrade ? (
+                      <>
+                        <span>⚡ MIGLIORA A LIVELLO {lvlInfo.level + 1}</span>
+                        <span style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 8px', borderRadius: 6 }}>
+                          Cost: {lvlInfo.upgradeCost} 🪙
+                        </span>
+                      </>
+                    ) : lvlInfo.availableDuplicateCopies < lvlInfo.requiredCopies ? (
+                      <span>🔒 Servono altre {lvlInfo.requiredCopies - lvlInfo.availableDuplicateCopies} copie per migliorare</span>
+                    ) : (
+                      <span>🪙 Monete insufficienti ({gold} / {lvlInfo.upgradeCost} 🪙)</span>
+                    )}
+                  </button>
+                )}
+
+                {levelUpSuccess && (
+                  <div style={{ marginTop: 8, textAlign: 'center', color: '#10b981', fontSize: 11, fontFamily: 'Cinzel, serif', fontWeight: 800, animation: 'fadeIn 0.3s ease' }}>
+                    ✨ CARTA POTENZIATA CON SUCCESSO AL LIVELLO {lvlInfo.level}!
+                  </div>
+                )}
+              </div>
 
               {/* Abilità */}
-              <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.03)', border: `1px solid ${(selectedVariant.accentColor || '#f0a500')}22`, borderRadius: 10, marginBottom: 12 }}>
+              <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.03)', border: `1px solid ${(selectedVariant.accentColor || '#f0a500')}22`, borderRadius: 10, marginBottom: 10 }}>
                 <div style={{ fontSize: 9, color: selectedVariant.accentColor || '#f0a500', fontFamily: 'Cinzel,serif', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>
                   {selectedVariant.abilityTitle || 'Abilità'}
                 </div>
@@ -183,7 +352,7 @@ function DetailModal({
 
               {/* Lore / Flavor Text */}
               {selectedVariant.flavorText && (
-                <div style={{ fontSize: 10.5, color: 'rgba(232,220,200,0.4)', fontStyle: 'italic', marginBottom: 16, lineHeight: 1.4 }}>
+                <div style={{ fontSize: 10.5, color: 'rgba(232,220,200,0.4)', fontStyle: 'italic', marginBottom: 14, lineHeight: 1.4 }}>
                   "{selectedVariant.flavorText}"
                 </div>
               )}
@@ -474,6 +643,13 @@ export function RealCollection() {
           )}
 
           {filteredGroups.map((group, i) => {
+            const displayLvlInfo = group.isDiscovered 
+              ? getCardLevelInfo(group.displayCard, inventory) 
+              : null
+            const displayCardWithStats = group.isDiscovered 
+              ? applyCardLevelStats(group.displayCard, displayLvlInfo?.level) 
+              : group.displayCard
+
             return (
               <div 
                 key={group.baseKey} 
@@ -482,7 +658,10 @@ export function RealCollection() {
                 {group.isDiscovered ? (
                   <div style={{ position: 'relative' }}>
                     <RealCardTile 
-                      card={group.displayCard} 
+                      card={displayCardWithStats} 
+                      level={displayLvlInfo?.level}
+                      canUpgrade={displayLvlInfo?.canUpgrade}
+                      copiesProgress={!displayLvlInfo?.maxLevelReached ? { current: displayLvlInfo?.availableDuplicateCopies || 0, max: displayLvlInfo?.requiredCopies || 1 } : undefined}
                       onClick={() => {
                         setSelectedGroup(group)
                         soundEngine.playCardFlip()
@@ -491,7 +670,7 @@ export function RealCollection() {
                     />
                     
                     {/* Indicatori Varianti sotto la carta */}
-                    <div style={{ display: 'flex', justifyContent: 'center', gap: 4, marginTop: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: 4, marginTop: 18 }}>
                       {group.variants.map(v => {
                         const owned = hasCard(v.id)
                         return (

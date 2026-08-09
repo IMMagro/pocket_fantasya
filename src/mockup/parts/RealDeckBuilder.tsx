@@ -1,19 +1,23 @@
 import { useState, useMemo, useEffect } from 'react'
 import { Icon } from '../NewUI'
-import { useRealCards, RealCardTile, rarInfo } from '../realCards'
-import { usePlayerInventory } from '../playerState'
+import { useRealCards, RealCardTile, RealBigCard, rarInfo } from '../realCards'
+import { usePlayerInventory, usePlayerEconomy, getCardLevelInfo, applyCardLevelStats } from '../playerState'
+import { soundEngine } from '../../engine/soundEngine'
 
 const DECK_KEY = 'card_clash_newui_deck_v1'
 const maxCopiesByRarity = (c: any) => (c?.rarity === 'legendary' || c?.rarity === 'mythic') ? 1 : 2
 
 export function RealDeckBuilder() {
   const { cards, loaded } = useRealCards()
-  const { inventory } = usePlayerInventory()
+  const { inventory, cardLevels, upgradeCard } = usePlayerInventory()
+  const { gold } = usePlayerEconomy()
   const [search, setSearch] = useState('')
   const [fType, setFType] = useState<string>('tutti')
   const [deck, setDeck] = useState<Record<string, number>>({})
   const [deckName, setDeckName] = useState('Mazzo Principale')
   const [saved, setSaved] = useState(false)
+  const [inspectCard, setInspectCard] = useState<any | null>(null)
+  const [upgradeMessage, setUpgradeMessage] = useState<string | null>(null)
 
   // Calcola il limite massimo di copie per una carta specifica (minore tra regola e copie possedute)
   const maxAllowed = (c: any) => {
@@ -44,12 +48,19 @@ export function RealDeckBuilder() {
     } catch {}
   }, [inventory])
 
-  const byId = useMemo(() => Object.fromEntries(cards.map(c => [c.id, c])), [cards])
+  // Mappa delle carte con statistiche di livello aggiornate
+  const byId = useMemo(() => {
+    return Object.fromEntries(
+      cards.map(c => [c.id, applyCardLevelStats(c, cardLevels[c.id] || 1)])
+    )
+  }, [cards, cardLevels])
 
-  // Filtra SOLO le carte possedute dal giocatore
+  // Filtra SOLO le carte possedute dal giocatore con statistiche di livello applicate
   const ownedCards = useMemo(() => {
-    return cards.filter(c => (inventory[c.id] || 0) > 0)
-  }, [cards, inventory])
+    return cards
+      .filter(c => (inventory[c.id] || 0) > 0)
+      .map(c => applyCardLevelStats(c, cardLevels[c.id] || 1))
+  }, [cards, inventory, cardLevels])
 
   const add = (c: any) => {
     const max = maxAllowed(c)
@@ -57,6 +68,7 @@ export function RealDeckBuilder() {
       const cur = d[c.id] ?? 0
       if (cur >= max) return d
       if (Object.values(d).reduce((a, b) => a + b, 0) >= 30) return d
+      soundEngine.playCardFlip()
       return { ...d, [c.id]: cur + 1 }
     })
   }
@@ -65,6 +77,7 @@ export function RealDeckBuilder() {
     setDeck(d => {
       const cur = d[id] ?? 0
       if (cur <= 0) return d
+      soundEngine.playButtonClick()
       const next = { ...d, [id]: cur - 1 }
       if (next[id] === 0) delete next[id]
       return next
@@ -89,8 +102,174 @@ export function RealDeckBuilder() {
     setTimeout(() => setSaved(false), 2000)
   }
 
+  const handleUpgradeInModal = (card: any) => {
+    const res = upgradeCard(card)
+    if (res.success) {
+      soundEngine.playLevelUp()
+      setUpgradeMessage(`✨ Potenziata a Livello ${res.newLevel}!`)
+      setTimeout(() => setUpgradeMessage(null), 2500)
+    }
+  }
+
+  const inspectLvlInfo = inspectCard ? getCardLevelInfo(inspectCard, inventory, gold) : null
+  const inspectCardWithStats = inspectCard ? applyCardLevelStats(inspectCard, inspectLvlInfo?.level) : null
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', height: 'calc(100vh - 64px)', overflow: 'hidden', background: '#06080f' }}>
+      
+      {/* Modale Dettaglio / Potenziamento Rapido dentro il Deck Builder */}
+      {inspectCard && inspectLvlInfo && inspectCardWithStats && (
+        <div onClick={() => setInspectCard(null)} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: 28, alignItems: 'center', background: 'rgba(10,13,22,0.98)', border: '1.5px solid rgba(240,165,0,0.3)', borderRadius: 20, padding: '24px', maxWidth: 760, width: '92%', boxShadow: '0 20px 50px rgba(0,0,0,0.85)' }}>
+            
+            <div style={{ flexShrink: 0, position: 'relative' }}>
+              <RealBigCard card={inspectCardWithStats} />
+              <div style={{
+                position: 'absolute',
+                top: 10,
+                left: 10,
+                background: 'linear-gradient(135deg, #1e293b, #0f172a)',
+                border: '1.5px solid #38bdf8',
+                borderRadius: 12,
+                padding: '4px 10px',
+                color: '#38bdf8',
+                fontFamily: 'Cinzel, serif',
+                fontSize: 12,
+                fontWeight: 900,
+                boxShadow: '0 0 16px rgba(56,189,248,0.5)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                zIndex: 40,
+              }}>
+                <span style={{ color: '#f0a500' }}>★</span>
+                <span>LIV. {inspectLvlInfo.level}</span>
+              </div>
+            </div>
+
+            <div style={{ flex: 1 }}>
+              <div className="font-cinzel" style={{ fontSize: 20, fontWeight: 800, color: '#f0a500', marginBottom: 4 }}>
+                {inspectCard.name}
+              </div>
+              <div style={{ fontSize: 11, color: 'rgba(232,220,200,0.5)', marginBottom: 14 }}>
+                {inspectCard.type} · Livello Attuale {inspectLvlInfo.level}
+              </div>
+
+              {/* Box Clash Royale Upgrade */}
+              <div style={{ background: 'rgba(15,23,42,0.9)', border: '1px solid rgba(56,189,248,0.3)', borderRadius: 12, padding: '14px', marginBottom: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span className="font-cinzel" style={{ fontSize: 11, fontWeight: 800, color: '#38bdf8' }}>
+                    ⚡ Potenziamento Carta
+                  </span>
+                  <span className="font-cinzel" style={{ fontSize: 11, color: '#e8dcc8', fontWeight: 700 }}>
+                    {inspectLvlInfo.maxLevelReached ? 'LIVELLO MAX' : `Liv. ${inspectLvlInfo.level} ➔ Liv. ${inspectLvlInfo.level + 1}`}
+                  </span>
+                </div>
+
+                {!inspectLvlInfo.maxLevelReached && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'rgba(232,220,200,0.6)', marginBottom: 4 }}>
+                      <span>Copie doppie accumulate</span>
+                      <strong style={{ color: inspectLvlInfo.availableDuplicateCopies >= inspectLvlInfo.requiredCopies ? '#10b981' : '#f0a500' }}>
+                        {inspectLvlInfo.availableDuplicateCopies} / {inspectLvlInfo.requiredCopies}
+                      </strong>
+                    </div>
+                    <div style={{ height: 8, background: 'rgba(0,0,0,0.6)', borderRadius: 4, overflow: 'hidden' }}>
+                      <div style={{
+                        width: `${inspectLvlInfo.progressPercent}%`,
+                        height: '100%',
+                        background: inspectLvlInfo.availableDuplicateCopies >= inspectLvlInfo.requiredCopies
+                          ? 'linear-gradient(90deg, #10b981, #34d399)'
+                          : 'linear-gradient(90deg, #0284c7, #38bdf8)',
+                      }} />
+                    </div>
+                  </div>
+                )}
+
+                {inspectCard.type === 'CREATURA' && (
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                    <div style={{ flex: 1, background: 'rgba(0,0,0,0.4)', borderRadius: 6, padding: '6px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 8, color: 'rgba(232,220,200,0.4)' }}>ATTACCO</div>
+                      <div className="font-cinzel" style={{ fontSize: 13, fontWeight: 800, color: '#f87171' }}>
+                        {inspectLvlInfo.effectiveAtk}
+                        {!inspectLvlInfo.maxLevelReached && (
+                          <span style={{ color: '#10b981', fontSize: 11, marginLeft: 3 }}>➔ {inspectLvlInfo.nextEffectiveAtk}</span>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ flex: 1, background: 'rgba(0,0,0,0.4)', borderRadius: 6, padding: '6px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 8, color: 'rgba(232,220,200,0.4)' }}>SALUTE (HP)</div>
+                      <div className="font-cinzel" style={{ fontSize: 13, fontWeight: 800, color: '#4ade80' }}>
+                        {inspectLvlInfo.effectiveHp}
+                        {!inspectLvlInfo.maxLevelReached && (
+                          <span style={{ color: '#10b981', fontSize: 11, marginLeft: 3 }}>➔ {inspectLvlInfo.nextEffectiveHp}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {!inspectLvlInfo.maxLevelReached ? (
+                  <button
+                    onClick={() => handleUpgradeInModal(inspectCard)}
+                    disabled={!inspectLvlInfo.canUpgrade}
+                    className="font-cinzel"
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      border: inspectLvlInfo.canUpgrade ? '1.5px solid #34d399' : '1px solid rgba(255,255,255,0.08)',
+                      background: inspectLvlInfo.canUpgrade ? 'linear-gradient(135deg, #10b981, #059669)' : 'rgba(255,255,255,0.04)',
+                      color: inspectLvlInfo.canUpgrade ? '#fff' : 'rgba(232,220,200,0.35)',
+                      fontSize: 10.5,
+                      fontWeight: 800,
+                      cursor: inspectLvlInfo.canUpgrade ? 'pointer' : 'not-allowed',
+                      boxShadow: inspectLvlInfo.canUpgrade ? '0 0 12px rgba(16,185,129,0.5)' : 'none',
+                    }}
+                  >
+                    {inspectLvlInfo.canUpgrade
+                      ? `⚡ MIGLIORA A LIV. ${inspectLvlInfo.level + 1} (${inspectLvlInfo.upgradeCost} 🪙)`
+                      : inspectLvlInfo.availableDuplicateCopies < inspectLvlInfo.requiredCopies
+                      ? `🔒 Servono altre ${inspectLvlInfo.requiredCopies - inspectLvlInfo.availableDuplicateCopies} copie`
+                      : `🪙 Monete insufficienti (${gold}/${inspectLvlInfo.upgradeCost} 🪙)`}
+                  </button>
+                ) : (
+                  <div style={{ textAlign: 'center', color: '#f0a500', fontSize: 10, fontFamily: 'Cinzel, serif', fontWeight: 800 }}>
+                    👑 LIVELLO MASSIMO RAGGIUNTO
+                  </div>
+                )}
+
+                {upgradeMessage && (
+                  <div style={{ marginTop: 6, textAlign: 'center', color: '#10b981', fontSize: 10.5, fontFamily: 'Cinzel, serif', fontWeight: 800 }}>
+                    {upgradeMessage}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => {
+                    add(inspectCardWithStats)
+                    setInspectCard(null)
+                  }}
+                  className="font-cinzel"
+                  style={{ flex: 1, padding: '9px', borderRadius: 8, background: 'linear-gradient(135deg,#f0a500,#d4842a)', border: 'none', color: '#06080f', fontSize: 11, fontWeight: 800, cursor: 'pointer' }}
+                >
+                  + Aggiungi al Mazzo
+                </button>
+                <button
+                  onClick={() => setInspectCard(null)}
+                  className="font-cinzel"
+                  style={{ padding: '9px 14px', borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(232,220,200,0.6)', fontSize: 11, cursor: 'pointer' }}
+                >
+                  Chiudi
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Catalogo Carte Possedute */}
       <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRight: '1px solid rgba(240,165,0,0.08)' }}>
         <div style={{ padding: '16px 24px', borderBottom: '1px solid rgba(240,165,0,0.08)', background: 'rgba(6,8,15,0.9)', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -98,7 +277,7 @@ export function RealDeckBuilder() {
             <div>
               <div className="font-cinzel" style={{ fontSize: 18, fontWeight: 700, color: '#e8dcc8', letterSpacing: '0.06em' }}>Le Tue Carte Sbloccate</div>
               <div style={{ fontSize: 11, color: 'rgba(232,220,200,0.4)', marginTop: 2 }}>
-                {ownedCards.length} carte uniche nel baule · Clicca per aggiungere al mazzo
+                {ownedCards.length} carte uniche nel baule · Clicca per aggiungere al mazzo (tieni premuto o ispeziona per migliorare)
               </div>
             </div>
             <div style={{ padding: '4px 12px', background: 'rgba(240,165,0,0.1)', border: '1px solid rgba(240,165,0,0.25)', borderRadius: 20, fontSize: 11, color: '#f0a500', fontFamily: 'Cinzel, serif', fontWeight: 700 }}>
@@ -133,7 +312,7 @@ export function RealDeckBuilder() {
           </div>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexWrap: 'wrap', gap: 14, alignContent: 'flex-start' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexWrap: 'wrap', gap: 18, alignContent: 'flex-start' }}>
           {loaded && ownedCards.length === 0 && (
             <div style={{ width: '100%', padding: '60px 20px', textAlign: 'center', color: 'rgba(232,220,200,0.4)', fontSize: 13, lineHeight: 1.8 }}>
               <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(240,165,0,0.1)', border: '1px solid rgba(240,165,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
@@ -160,15 +339,47 @@ export function RealDeckBuilder() {
             const ownedQty = inventory[card.id] || 0
             const max = maxAllowed(card)
             const isMaxed = cnt >= max
+            const lvlInfo = getCardLevelInfo(card, inventory, gold)
             
             return (
-              <RealCardTile 
-                key={card.id} 
-                card={card} 
-                onClick={() => add(card)} 
-                dimmed={isMaxed} 
-                badge={cnt > 0 ? `${cnt}/${ownedQty}` : `×${ownedQty}`} 
-              />
+              <div key={card.id} style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <RealCardTile 
+                  card={card} 
+                  level={lvlInfo.level}
+                  canUpgrade={lvlInfo.canUpgrade}
+                  copiesProgress={!lvlInfo.maxLevelReached ? { current: lvlInfo.availableDuplicateCopies, max: lvlInfo.requiredCopies } : undefined}
+                  onClick={() => add(card)} 
+                  dimmed={isMaxed} 
+                  badge={cnt > 0 ? `${cnt}/${ownedQty}` : `×${ownedQty}`} 
+                />
+                
+                {/* Tasto rapido Ispezione / Upgrade sotto la carta */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setInspectCard(card)
+                    soundEngine.playButtonClick()
+                  }}
+                  style={{
+                    marginTop: 18,
+                    padding: '3px 8px',
+                    borderRadius: 6,
+                    background: lvlInfo.canUpgrade ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.05)',
+                    border: `1px solid ${lvlInfo.canUpgrade ? '#10b981' : 'rgba(255,255,255,0.1)'}`,
+                    color: lvlInfo.canUpgrade ? '#10b981' : 'rgba(232,220,200,0.6)',
+                    fontSize: 9,
+                    fontFamily: 'Cinzel, serif',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 3,
+                  }}
+                >
+                  <span>{lvlInfo.canUpgrade ? '⚡' : '🔍'}</span>
+                  <span>{lvlInfo.canUpgrade ? 'Migliora' : 'Dettagli'}</span>
+                </button>
+              </div>
             )
           })}
         </div>
@@ -225,6 +436,7 @@ export function RealDeckBuilder() {
             const max = maxAllowed(card)
             const currentInDeck = deck[card.id] ?? 0
             const canAddMore = currentInDeck < max && total < 30
+            const cardLvl = card.level || 1
 
             return (
               <div key={card.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, marginBottom: 4, background: 'rgba(255,255,255,0.02)' }}>
@@ -232,11 +444,21 @@ export function RealDeckBuilder() {
                   {card.cost}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="font-cinzel" style={{ fontSize: 10, fontWeight: 600, color: accent, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {card.name}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span className="font-cinzel" style={{ fontSize: 10, fontWeight: 600, color: accent, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {card.name}
+                    </span>
+                    {cardLvl > 1 && (
+                      <span style={{ fontSize: 8, color: '#38bdf8', background: 'rgba(56,189,248,0.15)', border: '1px solid rgba(56,189,248,0.4)', borderRadius: 4, padding: '0 3px', fontWeight: 800 }}>
+                        ★{cardLvl}
+                      </span>
+                    )}
                   </div>
-                  <div style={{ fontSize: 8, color: rar.color, marginTop: 1 }}>
-                    {rar.label} · {ownedQty} nel baule
+                  <div style={{ fontSize: 8, color: 'rgba(232,220,200,0.4)', marginTop: 1, display: 'flex', gap: 6 }}>
+                    <span style={{ color: rar.color }}>{rar.label}</span>
+                    {card.type === 'CREATURA' && (
+                      <span>⚔{card.atk} ♥{card.hp}</span>
+                    )}
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>

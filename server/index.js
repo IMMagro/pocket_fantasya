@@ -12,7 +12,9 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '15mb' }));
+// Limite generoso: le carte incorporano immagini base64. Con la compressione
+// lato Studio restano piccole, ma teniamo ampio margine per non rifiutare mai.
+app.use(express.json({ limit: '100mb' }));
 
 const server = http.createServer(app);
 const io = new Server(server, {

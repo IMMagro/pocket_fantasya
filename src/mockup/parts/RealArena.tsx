@@ -1,14 +1,40 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { io } from 'socket.io-client'
 import { Icon } from '../NewUI'
 import { createInitialGameState, playCard, attackTarget, endTurn, getCardEffectiveCost } from '../../engine/gameEngine'
 import { executeAiTurn } from '../../engine/aiBot'
 import { soundEngine } from '../../engine/soundEngine'
-import { usePlayerEconomy } from '../playerState'
+import { usePlayerEconomy, usePlayerInventory, applyCardLevelStats } from '../playerState'
 
 // Le carte del gioco sono SOLO quelle create da te nel Card Creator Studio,
 // pubblicate sul server. Niente carte di default.
 const SERVER_URL = 'http://localhost:4000'
+
+// Mazzo salvato dal Deck Builder
+const DECK_KEY = 'card_clash_newui_deck_v1'
+
+// Costruisce il mazzo del giocatore dal salvataggio del Deck Builder, limitato
+// alle copie effettivamente possedute e con statistiche di livello applicate.
+function buildPlayerDeck(allCards: any[], inventory: Record<string, number>, cardLevels: Record<string, number> = {}): { deck: any[]; source: 'deck' | 'owned' | 'all' } {
+  const byId: Record<string, any> = Object.fromEntries(allCards.map(c => [c.id, applyCardLevelStats(c, cardLevels[c.id] || 1)]))
+  let counts: Record<string, number> = {}
+  try {
+    const raw = localStorage.getItem(DECK_KEY)
+    if (raw) { const d = JSON.parse(raw); if (d?.counts && typeof d.counts === 'object') counts = d.counts }
+  } catch {}
+  const deck: any[] = []
+  for (const [id, n] of Object.entries(counts)) {
+    const card = byId[id]
+    if (!card) continue
+    const owned = inventory[id] || 0
+    const qty = Math.min(Number(n) || 0, owned)
+    for (let i = 0; i < qty; i++) deck.push(card)
+  }
+  if (deck.length >= 2) return { deck, source: 'deck' }
+  const owned = allCards.filter(c => (inventory[c.id] || 0) > 0).map(c => applyCardLevelStats(c, cardLevels[c.id] || 1))
+  if (owned.length >= 2) return { deck: owned, source: 'owned' }
+  return { deck: allCards.map(c => applyCardLevelStats(c, cardLevels[c.id] || 1)), source: 'all' }
+}
 
 // Mappa rarità delle carte REALI (common/rare/epic/legendary/mythic) al look nuovo
 const REAL_RARITY: Record<string, { color: string; label: string }> = {
@@ -21,10 +47,10 @@ const REAL_RARITY: Record<string, { color: string; label: string }> = {
 const rarInfo = (r: string) => REAL_RARITY[r] || REAL_RARITY.common
 
 // ── Tile creatura sul campo con animazioni di combattimento ───────────────────
-function BoardMinion({ minion, side, selectable, isSelected, isTarget, isAttacking, attackDir, hasSlash, hasSpell, floatingText, onInspect, onClick }: any) {
+function BoardMinion({ minion, side, selectable, isSelected, isTarget, isAttacking, attackDir, hasSlash, hasSparks, hasShieldBreak, hasSpell, hasHeal, isDying, floatingText, onInspect, onClick }: any) {
   const [hov, setHov] = useState(false)
   const lowHp = minion.currentHp < minion.hp * 0.4
-  const animClass = isAttacking ? (attackDir === 'up' ? 'anim-attack-up' : 'anim-attack-down') : ''
+  const animClass = isDying ? 'minion-dying-dissolve' : isAttacking ? (attackDir === 'up' ? 'anim-attack-up' : 'anim-attack-down') : ''
 
   return (
     <div onClick={onClick} onMouseEnter={() => { setHov(true); onInspect && onInspect(minion) }} onMouseLeave={() => { setHov(false); onInspect && onInspect(null) }} title={minion.abilityText}
@@ -35,9 +61,9 @@ function BoardMinion({ minion, side, selectable, isSelected, isTarget, isAttacki
         backgroundImage: 'linear-gradient(180deg, #FAF7EE 0%, #F5F1E6 100%)',
         border: `2px solid ${isSelected ? '#f0a500' : isTarget && hov ? '#dc2626' : hov ? '#6C8D88' : '#D1C9B8'}`,
         position: 'relative', overflow: 'visible',
-        cursor: (selectable || isTarget) ? 'pointer' : 'default',
-        transition: isAttacking ? 'none' : 'all 0.18s cubic-bezier(0.34,1.56,0.64,1)',
-        transform: isSelected ? 'scale(1.1) translateY(-6px)' : hov && (selectable || isTarget) ? 'scale(1.05) translateY(-3px)' : 'scale(1)',
+        cursor: (selectable || isTarget) && !isDying ? 'pointer' : 'default',
+        transition: (isAttacking || isDying) ? 'none' : 'all 0.18s cubic-bezier(0.34,1.56,0.64,1)',
+        transform: isDying ? undefined : isSelected ? 'scale(1.1) translateY(-6px)' : hov && (selectable || isTarget) ? 'scale(1.05) translateY(-3px)' : 'scale(1)',
         boxShadow: isSelected ? '0 0 24px rgba(240,165,0,0.7), 0 16px 34px rgba(0,0,0,0.5)' : isTarget && hov ? '0 0 20px rgba(220,38,38,0.6)' : `0 4px 14px rgba(0,0,0,0.25)`,
         filter: !minion.canAttack && side === 'player' && !isTarget ? 'brightness(0.85)' : 'none',
         flexShrink: 0,
@@ -54,8 +80,17 @@ function BoardMinion({ minion, side, selectable, isSelected, isTarget, isAttacki
       {/* Visual Slash Arc FX */}
       {hasSlash && <div className="slash-effect-line" />}
 
+      {/* Impact Sparks Blast FX */}
+      {hasSparks && <div className="impact-sparks-fx" />}
+
+      {/* Shield Barrier Deflect FX */}
+      {hasShieldBreak && <div className="shield-deflect-fx" />}
+
       {/* Spell Shockwave FX */}
       {hasSpell && <div className="spell-shockwave-ring" />}
+
+      {/* Heal Aura FX */}
+      {hasHeal && <div className="magic-aura-heal-fx" />}
 
       {/* Hanging Slate-Teal Ribbon */}
       <div style={{
@@ -74,7 +109,7 @@ function BoardMinion({ minion, side, selectable, isSelected, isTarget, isAttacki
           <Icon.shield style={{ width: 10, height: 10, color: '#FAF7EE' }} />
         </div>
       )}
-      {side === 'player' && minion.canAttack && (
+      {side === 'player' && minion.canAttack && !isDying && (
         <div style={{ position: 'absolute', top: 4, right: minion.hasTaunt ? 26 : 4, zIndex: 5, width: 8, height: 8, borderRadius: '50%', background: '#f0a500', boxShadow: '0 0 8px rgba(240,165,0,0.9)', animation: 'badge-pulse 1.5s ease infinite' }} />
       )}
 
@@ -122,7 +157,7 @@ function BoardMinion({ minion, side, selectable, isSelected, isTarget, isAttacki
           {minion.currentHp}<Icon.shield style={{ width: 9, height: 9, color: '#851e1e' }} />
         </span>
       </div>
-      {isTarget && (
+      {isTarget && !isDying && (
         <div style={{ position: 'absolute', inset: 0, borderRadius: 12, background: 'rgba(220,38,38,0.15)', border: '2px solid #dc2626' }} />
       )}
     </div>
@@ -232,7 +267,7 @@ function HandCard({ card, effectiveCost, isDiscounted, affordable, index = 0, to
 }
 
 // ── Barra Eroe con effetti di danno e suoni ──────────────────────────────────
-function HeroBar({ name, hp, shield, isOpponent, flash, hasSlash, hasSpell, floatingText, mana, maxMana }: any) {
+function HeroBar({ name, hp, shield, isOpponent, flash, hasSlash, hasSparks, hasShieldBreak, hasSpell, hasHeal, floatingText, mana, maxMana }: any) {
   const col = isOpponent ? '#f87171' : '#60a5fa'
   return (
     <div style={{ display: 'flex', alignItems: 'center', padding: '9px 16px', flexShrink: 0, background: `rgba(${isOpponent ? '248,113,113' : '96,165,250'},${flash ? '0.24' : '0.04'})`, borderTop: isOpponent ? 'none' : '1px solid rgba(96,165,250,0.1)', borderBottom: isOpponent ? '1px solid rgba(248,113,113,0.1)' : 'none', transition: 'background 0.25s ease', position: 'relative' }}>
@@ -247,8 +282,17 @@ function HeroBar({ name, hp, shield, isOpponent, flash, hasSlash, hasSpell, floa
       {/* Visual Slash Arc FX */}
       {hasSlash && <div className="slash-effect-line" />}
 
+      {/* Impact Sparks FX */}
+      {hasSparks && <div className="impact-sparks-fx" />}
+
+      {/* Shield Barrier Deflect FX */}
+      {hasShieldBreak && <div className="shield-deflect-fx" />}
+
       {/* Spell Shockwave FX */}
       {hasSpell && <div className="spell-shockwave-ring" />}
+
+      {/* Heal Aura FX */}
+      {hasHeal && <div className="magic-aura-heal-fx" />}
 
       {!isOpponent && mana !== undefined && (
         <div style={{ display: 'flex', gap: 3, marginRight: 12, flexShrink: 0, alignItems: 'center' }}>
@@ -279,7 +323,7 @@ function HeroBar({ name, hp, shield, isOpponent, flash, hasSlash, hasSpell, floa
 
 export function RealArena() {
   const [screen, setScreen] = useState<'lobby' | 'battle'>('lobby')
-  const [lobbyMode, setLobbyMode] = useState<'menu' | 'lan'>('menu')
+  const [lobbyMode, setLobbyMode] = useState<'menu' | 'host' | 'join'>('menu')
   const [gameState, setGameState] = useState<any>(null)
   const [selectedAttackerId, setSelectedAttackerId] = useState<string | null>(null)
   const [isAiThinking, setIsAiThinking] = useState(false)
@@ -295,11 +339,16 @@ export function RealArena() {
   const [animAttackerId, setAnimAttackerId] = useState<string | null>(null)
   const [animAttackerDir, setAnimAttackerDir] = useState<'up' | 'down'>('up')
   const [slashTargets, setSlashTargets] = useState<{ [key: string]: boolean }>({})
+  const [sparksTargets, setSparksTargets] = useState<{ [key: string]: boolean }>({})
+  const [shieldBreakTargets, setShieldBreakTargets] = useState<{ [key: string]: boolean }>({})
   const [spellTargets, setSpellTargets] = useState<{ [key: string]: boolean }>({})
+  const [healTargets, setHealTargets] = useState<{ [key: string]: boolean }>({})
+  const [dyingMinions, setDyingMinions] = useState<{ [key: string]: any }>({})
   const [floatingTexts, setFloatingTexts] = useState<{ [key: string]: { text: string; color: string } }>({})
   const [screenShake, setScreenShake] = useState<'subtle' | 'heavy' | null>(null)
   const [turnBanner, setTurnBanner] = useState<{ text: string; isPlayer: boolean } | null>(null)
   const prevTurn = useRef<string | null>(null)
+  const prevBoardMinionsRef = useRef<Map<string, any>>(new Map())
 
   // ── Pannello di lettura/anteprima carta (a sinistra) ───────────────────────
   const [inspectCard, setInspectCard] = useState<any>(null)          // carta sotto il mouse
@@ -323,6 +372,11 @@ export function RealArena() {
   const gameSocket = useRef<any>(null)
   const rewardGivenRef = useRef<boolean>(false)
   const { addGold } = usePlayerEconomy()
+  const { inventory, cardLevels } = usePlayerInventory()
+
+  // Mazzo del giocatore: dal Deck Builder (clampato al posseduto), con fallback e statistiche di livello.
+  // Ricalcolato al montaggio dell'arena e quando cambiano carte/inventario/livelli.
+  const myDeck = useMemo(() => buildPlayerDeck(cards, inventory, cardLevels), [cards, inventory, cardLevels])
 
   // In solo (e come host) io sono il lato "player"; come guest sono "opponent".
   const meIsHost = !isMultiplayer || isHost
@@ -351,6 +405,31 @@ export function RealArena() {
     }, 450)
   }
 
+  // Helper per attivare scintille di impatto
+  const triggerSparksFx = (targetKey: string) => {
+    setSparksTargets(prev => ({ ...prev, [targetKey]: true }))
+    setTimeout(() => {
+      setSparksTargets(prev => {
+        const next = { ...prev }
+        delete next[targetKey]
+        return next
+      })
+    }, 480)
+  }
+
+  // Helper per attivare scudo deflesso
+  const triggerShieldBreakFx = (targetKey: string) => {
+    setShieldBreakTargets(prev => ({ ...prev, [targetKey]: true }))
+    soundEngine.playHeroShieldBreak()
+    setTimeout(() => {
+      setShieldBreakTargets(prev => {
+        const next = { ...prev }
+        delete next[targetKey]
+        return next
+      })
+    }, 520)
+  }
+
   // Helper per attivare onda magica
   const triggerSpellFx = (targetKey: string) => {
     setSpellTargets(prev => ({ ...prev, [targetKey]: true }))
@@ -363,11 +442,25 @@ export function RealArena() {
     }, 600)
   }
 
-  // Esegue l'animazione di scatto/fendente
+  // Helper per attivare aura di cura
+  const triggerHealFx = (targetKey: string) => {
+    setHealTargets(prev => ({ ...prev, [targetKey]: true }))
+    soundEngine.playMagicCast()
+    setTimeout(() => {
+      setHealTargets(prev => {
+        const next = { ...prev }
+        delete next[targetKey]
+        return next
+      })
+    }, 800)
+  }
+
+  // Esegue l'animazione completa di combattimento con fisica di scatto, impatto e squarcio
   const triggerCombatAnim = (attackerId: string, dir: 'up' | 'down', targetKey: string, damage: number) => {
     setAnimAttackerId(attackerId)
     setAnimAttackerDir(dir)
     triggerSlashFx(targetKey)
+    triggerSparksFx(targetKey)
     triggerFloatingNumber(targetKey, `-${damage}`, damage >= 5 ? '#f59e0b' : '#f87171')
     setScreenShake(damage >= 4 ? 'heavy' : 'subtle')
     soundEngine.playSwordSlash()
@@ -476,10 +569,11 @@ export function RealArena() {
   }
 
   const startSolo = () => {
-    if (cards.length < 2) return
+    if (myDeck.deck.length < 2) return
     setIsMultiplayer(false); setIsHost(true)
     rewardGivenRef.current = false
-    const gs = createInitialGameState(cards, cards, 'Tu', 'AI Bot Arena')
+    // Giocatore col proprio mazzo; l'AI pesca da tutte le carte pubblicate.
+    const gs = createInitialGameState(myDeck.deck, cards, 'Tu', 'AI Bot Arena')
     prevHp.current = { p: 30, o: 30 }
     setGameState(gs)
     setSelectedAttackerId(null)
@@ -488,15 +582,15 @@ export function RealArena() {
 
   // Host: crea la stanza, attende l'avversario, poi genera e sincronizza lo stato.
   const startHost = () => {
-    if (cards.length < 2) return
+    if (myDeck.deck.length < 2) return
     setIsMultiplayer(true); setIsHost(true); setConnecting(true); setConnError(null); setOppLeft(false)
     setMatchRoom(roomId)
     const s = io('http://' + hostIp.replace(/^https?:\/\//, ''))
     gameSocket.current = s
-    s.emit('host_room', { roomId, playerName, deck: cards })
+    s.emit('host_room', { roomId, playerName, deck: myDeck.deck })
     s.on('player_joined', ({ guest }: any) => {
       const guestDeck = guest?.deck?.length >= 2 ? guest.deck : cards
-      const gs = createInitialGameState(cards, guestDeck, playerName, guest?.name || 'Sfidante')
+      const gs = createInitialGameState(myDeck.deck, guestDeck, playerName, guest?.name || 'Sfidante')
       prevHp.current = { p: 30, o: 30 }
       s.emit('sync_game_state', { roomId, gameState: gs })
       setGameState(gs); setSelectedAttackerId(null); setConnecting(false); setScreen('battle')
@@ -506,13 +600,13 @@ export function RealArena() {
 
   // Guest: si unisce alla stanza e attende lo stato iniziale dall'host.
   const startJoin = () => {
-    if (!joinRoomId || cards.length < 2) return
+    if (!joinRoomId || myDeck.deck.length < 2) return
     setIsMultiplayer(true); setIsHost(false); setConnecting(true); setConnError(null); setOppLeft(false)
     setMatchRoom(joinRoomId)
     const url = 'http://' + hostIp.replace(/^https?:\/\//, '')
     const s = io(url)
     gameSocket.current = s
-    s.emit('join_room', { roomId: joinRoomId, playerName, deck: cards })
+    s.emit('join_room', { roomId: joinRoomId, playerName, deck: myDeck.deck })
     s.on('join_error', ({ message }: any) => { setConnecting(false); setConnError(message || 'Connessione fallita.') })
     s.on('game_state_synced', ({ gameState: gs }: any) => {
       prevHp.current = { p: 30, o: 30 }
@@ -531,11 +625,15 @@ export function RealArena() {
     if (!gameState || screen !== 'battle' || isMultiplayer) return
     if (gameState.currentTurn === 'opponent' && !gameState.winner && !isAiThinking) {
       setIsAiThinking(true)
-      executeAiTurn(gameState, (s: any) => setGameState(s), (t: string) => {
+      executeAiTurn(gameState, (s: any) => setGameState(s), (t: string, payload?: any) => {
         if (t === 'attack') {
-          soundEngine.playSwordSlash()
-          setScreenShake('subtle')
-          setTimeout(() => setScreenShake(null), 300)
+          if (payload?.attackerId && payload?.targetKey) {
+            triggerCombatAnim(payload.attackerId, 'down', payload.targetKey, payload.damage || 2)
+          } else {
+            soundEngine.playSwordSlash()
+            setScreenShake('subtle')
+            setTimeout(() => setScreenShake(null), 300)
+          }
         } else if (t === 'damage') {
           soundEngine.playDamage()
           setScreenShake('heavy')
@@ -591,7 +689,90 @@ export function RealArena() {
     if (logRef.current) logRef.current.scrollTop = 0
   }, [gameState, meIsHost])
 
-  if (screen === 'lobby' || !gameState) {
+  const p = gameState ? (meIsHost ? gameState.player : gameState.opponent) : null
+  const o = gameState ? (meIsHost ? gameState.opponent : gameState.player) : null
+  const isMyTurn = gameState ? (meIsHost ? gameState.currentTurn === 'player' : gameState.currentTurn === 'opponent') : false
+  const winner = gameState?.winner || null
+  const iWon = !!winner && (meIsHost ? winner === 'player' : winner === 'opponent')
+  const enemyHasTaunt = o?.board ? o.board.some((m: any) => m.hasTaunt) : false
+  // L'Eroe avversario è colpibile solo se non ci sono creature nemiche in campo
+  const canHitFace = o?.board ? o.board.length === 0 : false
+  // Carta da mostrare nel pannello a sinistra: evocazione recente ha priorità sull'hover
+  const previewCard = summonPreview || inspectCard
+
+  const emitAction = (action: string, payload: any) => {
+    if (isMultiplayer && gameSocket.current) gameSocket.current.emit('game_action', { roomId: matchRoom, action, payload })
+  }
+
+  const onHandClick = (card: any) => {
+    if (!p) return
+    const effCost = getCardEffectiveCost(card, p)
+    if (!isMyTurn || winner || p.mana < effCost) { if (isMyTurn && !winner) soundEngine.playDamage(); return }
+    
+    // Suono o effetto magico speciale se la carta ha abilità
+    if (card.abilityText && card.abilityText.length > 5) {
+      if (/cur\w*|ripristin/i.test(card.abilityText)) {
+        triggerHealFx('hero_player')
+      } else {
+        soundEngine.playMagicCast()
+        triggerSpellFx('hero_player')
+      }
+    } else {
+      soundEngine.playCardPlay()
+    }
+
+    setGameState(playCard(gameState, meIsHost, card.instanceId))
+    setSelectedAttackerId(null)
+    emitAction('play_card', { cardInstanceId: card.instanceId })
+  }
+
+  const onFriendlyClick = (m: any) => {
+    if (!isMyTurn || winner || !m.canAttack) return
+    soundEngine.playButtonClick()
+    setSelectedAttackerId(prev => prev === m.instanceId ? null : m.instanceId)
+  }
+
+  const onAttack = (targetType: 'hero' | 'minion', targetId: string | null) => {
+    if (!p || !isMyTurn || !selectedAttackerId || winner) return
+    
+    const attacker = p.board.find((m: any) => m.instanceId === selectedAttackerId)
+    const targetKey = targetType === 'hero' ? 'hero_opponent' : (targetId || '')
+    const dmg = attacker ? Math.max(1, attacker.atk) : 1
+    
+    // Attiva animazione di scatto, impatto e squarcio
+    triggerCombatAnim(selectedAttackerId, 'up', targetKey, dmg)
+
+    setGameState(attackTarget(gameState, meIsHost, selectedAttackerId, targetType, targetId))
+    emitAction('attack', { attackerId: selectedAttackerId, targetType, targetInstanceId: targetId })
+    setSelectedAttackerId(null)
+  }
+
+  const onEndTurn = () => {
+    if (!isMyTurn || winner || isAiThinking) return
+    soundEngine.playButtonClick()
+    setSelectedAttackerId(null)
+    setGameState(endTurn(gameState))
+    emitAction('end_turn', {})
+  }
+
+  // Lista mista di creature attive e creature in dissolvenza di morte
+  const oppBoardList = useMemo(() => {
+    if (!o?.board) return []
+    const activeList = o.board || []
+    const activeIds = new Set(activeList.map((m: any) => m.instanceId))
+    const dyingList = Object.values(dyingMinions).filter((m: any) => (m._side === 'opponent' || (!meIsHost ? m._side === 'player' : m._side === 'opponent')) && !activeIds.has(m.instanceId))
+    return [...activeList, ...dyingList]
+  }, [o?.board, dyingMinions, meIsHost])
+
+  const playerBoardList = useMemo(() => {
+    if (!p?.board) return []
+    const activeList = p.board || []
+    const activeIds = new Set(activeList.map((m: any) => m.instanceId))
+    const dyingList = Object.values(dyingMinions).filter((m: any) => (m._side === 'player' || (meIsHost ? m._side === 'player' : m._side === 'opponent')) && !activeIds.has(m.instanceId))
+    return [...activeList, ...dyingList]
+  }, [p?.board, dyingMinions, meIsHost])
+
+  if (screen === 'lobby' || !gameState || !p || !o) {
     return (
       <div style={{ position: 'relative', height: 'calc(100vh - 64px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
         <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
@@ -607,9 +788,9 @@ export function RealArena() {
 
         {lobbyMode === 'menu' && (
           <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', justifyContent: 'center', animation: 'slide-up 0.55s ease 0.12s both', position: 'relative', zIndex: 2 }}>
-            <button onClick={startSolo} disabled={cards.length < 2}
-              style={{ width: 240, padding: '28px 24px', textAlign: 'left', background: 'linear-gradient(145deg, rgba(200,60,20,0.14) 0%, rgba(13,17,32,0.95) 100%)', border: '1px solid rgba(248,113,113,0.3)', borderRadius: 16, cursor: cards.length < 2 ? 'not-allowed' : 'pointer', opacity: cards.length < 2 ? 0.55 : 1, transition: 'all 0.25s ease', position: 'relative', overflow: 'hidden' }}
-              onMouseEnter={e => { if (cards.length < 2) return; e.currentTarget.style.borderColor = 'rgba(248,113,113,0.65)'; e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 20px 60px rgba(248,113,113,0.18)' }}
+            <button onClick={startSolo} disabled={myDeck.deck.length < 2}
+              style={{ width: 240, padding: '28px 24px', textAlign: 'left', background: 'linear-gradient(145deg, rgba(200,60,20,0.14) 0%, rgba(13,17,32,0.95) 100%)', border: '1px solid rgba(248,113,113,0.3)', borderRadius: 16, cursor: myDeck.deck.length < 2 ? 'not-allowed' : 'pointer', opacity: myDeck.deck.length < 2 ? 0.55 : 1, transition: 'all 0.25s ease', position: 'relative', overflow: 'hidden' }}
+              onMouseEnter={e => { if (myDeck.deck.length < 2) return; e.currentTarget.style.borderColor = 'rgba(248,113,113,0.65)'; e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 20px 60px rgba(248,113,113,0.18)' }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(248,113,113,0.3)'; e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '' }}>
               <div style={{ width: 48, height: 48, borderRadius: 12, marginBottom: 16, background: 'linear-gradient(135deg, rgba(248,113,113,0.2), rgba(200,40,40,0.28))', border: '1px solid rgba(248,113,113,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Icon.bot style={{ width: 24, height: 24, color: '#f87171' }} />
@@ -617,16 +798,20 @@ export function RealArena() {
               <div className="font-cinzel" style={{ fontSize: 14, fontWeight: 700, color: '#f87171', marginBottom: 8, letterSpacing: '0.05em' }}>Sfida l'IA</div>
               <div style={{ fontSize: 12, color: 'rgba(232,220,200,0.5)', lineHeight: 1.55, marginBottom: 18 }}>
                 {cards.length === 0
-                  ? 'Nessuna tua carta trovata. Creale nel Card Creator Studio e pubblicale.'
-                  : `Giochi con le tue ${cards.length} carte create. Abilità, suoni ed effetti attivi.`}
+                  ? 'Nessuna carta pubblicata. Creale nel Card Creator Studio.'
+                  : myDeck.source === 'deck'
+                  ? `Giochi con il tuo mazzo (${myDeck.deck.length} carte). Abilità, suoni ed effetti attivi.`
+                  : myDeck.source === 'owned'
+                  ? `Nessun mazzo salvato: usi le tue ${myDeck.deck.length} carte possedute. Costruiscine uno nel Deck Builder.`
+                  : `Non possiedi ancora carte: demo con tutte le ${myDeck.deck.length} pubblicate. Apri pacchetti e costruisci un mazzo!`}
               </div>
               <div style={{ display: 'inline-block', padding: '4px 12px', borderRadius: 20, background: 'rgba(248,113,113,0.15)', border: '1px solid rgba(248,113,113,0.3)', fontSize: 9, color: '#f87171', fontFamily: 'Cinzel,serif', letterSpacing: '0.1em' }}>
-                {cards.length === 0 ? 'STUDIO RICHIESTO' : cards.length < 2 ? 'SERVONO ≥2 CARTE' : `${cards.length} TUE CARTE`}
+                {myDeck.deck.length < 2 ? 'SERVONO CARTE' : myDeck.source === 'deck' ? `MAZZO · ${myDeck.deck.length}` : myDeck.source === 'owned' ? `COLLEZIONE · ${myDeck.deck.length}` : `DEMO · ${myDeck.deck.length}`}
               </div>
             </button>
-            <button onClick={() => { if (cards.length >= 2) { soundEngine.playButtonClick(); setLobbyMode('lan') } }} disabled={cards.length < 2}
-              style={{ width: 240, padding: '28px 24px', textAlign: 'left', background: 'linear-gradient(145deg, rgba(96,165,250,0.1) 0%, rgba(13,17,32,0.95) 100%)', border: '1px solid rgba(96,165,250,0.3)', borderRadius: 16, cursor: cards.length < 2 ? 'not-allowed' : 'pointer', opacity: cards.length < 2 ? 0.55 : 1, transition: 'all 0.25s ease', position: 'relative', overflow: 'hidden' }}
-              onMouseEnter={e => { if (cards.length < 2) return; e.currentTarget.style.borderColor = 'rgba(96,165,250,0.65)'; e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 20px 60px rgba(96,165,250,0.18)' }}
+            <button onClick={() => { if (myDeck.deck.length >= 2) { soundEngine.playButtonClick(); setLobbyMode('lan') } }} disabled={myDeck.deck.length < 2}
+              style={{ width: 240, padding: '28px 24px', textAlign: 'left', background: 'linear-gradient(145deg, rgba(96,165,250,0.1) 0%, rgba(13,17,32,0.95) 100%)', border: '1px solid rgba(96,165,250,0.3)', borderRadius: 16, cursor: myDeck.deck.length < 2 ? 'not-allowed' : 'pointer', opacity: myDeck.deck.length < 2 ? 0.55 : 1, transition: 'all 0.25s ease', position: 'relative', overflow: 'hidden' }}
+              onMouseEnter={e => { if (myDeck.deck.length < 2) return; e.currentTarget.style.borderColor = 'rgba(96,165,250,0.65)'; e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 20px 60px rgba(96,165,250,0.18)' }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(96,165,250,0.3)'; e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '' }}>
               <div style={{ width: 48, height: 48, borderRadius: 12, marginBottom: 16, background: 'linear-gradient(135deg, rgba(96,165,250,0.2), rgba(40,90,200,0.28))', border: '1px solid rgba(96,165,250,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Icon.trophy style={{ width: 24, height: 24, color: '#60a5fa' }} />
@@ -694,67 +879,6 @@ export function RealArena() {
         )}
       </div>
     )
-  }
-
-  const p = meIsHost ? gameState.player : gameState.opponent
-  const o = meIsHost ? gameState.opponent : gameState.player
-  const isMyTurn = meIsHost ? gameState.currentTurn === 'player' : gameState.currentTurn === 'opponent'
-  const winner = gameState.winner
-  const iWon = !!winner && (meIsHost ? winner === 'player' : winner === 'opponent')
-  const enemyHasTaunt = o.board.some((m: any) => m.hasTaunt)
-  // L'Eroe avversario è colpibile solo se non ci sono creature nemiche in campo
-  const canHitFace = o.board.length === 0
-  // Carta da mostrare nel pannello a sinistra: evocazione recente ha priorità sull'hover
-  const previewCard = summonPreview || inspectCard
-
-  const emitAction = (action: string, payload: any) => {
-    if (isMultiplayer && gameSocket.current) gameSocket.current.emit('game_action', { roomId: matchRoom, action, payload })
-  }
-
-  const onHandClick = (card: any) => {
-    const effCost = getCardEffectiveCost(card, p)
-    if (!isMyTurn || winner || p.mana < effCost) { if (isMyTurn && !winner) soundEngine.playDamage(); return }
-    
-    // Suono o effetto magico speciale se la carta ha abilità
-    if (card.abilityText && card.abilityText.length > 5) {
-      soundEngine.playMagicCast()
-      triggerSpellFx('hero_player')
-    } else {
-      soundEngine.playCardPlay()
-    }
-
-    setGameState(playCard(gameState, meIsHost, card.instanceId))
-    setSelectedAttackerId(null)
-    emitAction('play_card', { cardInstanceId: card.instanceId })
-  }
-
-  const onFriendlyClick = (m: any) => {
-    if (!isMyTurn || winner || !m.canAttack) return
-    soundEngine.playButtonClick()
-    setSelectedAttackerId(prev => prev === m.instanceId ? null : m.instanceId)
-  }
-
-  const onAttack = (targetType: 'hero' | 'minion', targetId: string | null) => {
-    if (!isMyTurn || !selectedAttackerId || winner) return
-    
-    const attacker = p.board.find((m: any) => m.instanceId === selectedAttackerId)
-    const targetKey = targetType === 'hero' ? 'hero_opponent' : (targetId || '')
-    const dmg = attacker ? Math.max(1, attacker.atk) : 1
-    
-    // Attiva animazione di scatto e squarcio
-    triggerCombatAnim(selectedAttackerId, 'up', targetKey, dmg)
-
-    setGameState(attackTarget(gameState, meIsHost, selectedAttackerId, targetType, targetId))
-    emitAction('attack', { attackerId: selectedAttackerId, targetType, targetInstanceId: targetId })
-    setSelectedAttackerId(null)
-  }
-
-  const onEndTurn = () => {
-    if (!isMyTurn || winner || isAiThinking) return
-    soundEngine.playButtonClick()
-    setSelectedAttackerId(null)
-    setGameState(endTurn(gameState))
-    emitAction('end_turn', {})
   }
 
   return (
@@ -897,32 +1021,39 @@ export function RealArena() {
           isOpponent
           flash={oFlash}
           hasSlash={!!slashTargets['hero_opponent']}
+          hasSparks={!!sparksTargets['hero_opponent']}
+          hasShieldBreak={!!shieldBreakTargets['hero_opponent']}
           hasSpell={!!spellTargets['hero_opponent']}
+          hasHeal={!!healTargets['hero_opponent']}
           floatingText={floatingTexts['hero_opponent']}
         />
 
         {/* Campo avversario */}
         <div onClick={() => { if (selectedAttackerId && canHitFace) onAttack('hero', null) }}
           style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 16px', borderBottom: '1px solid rgba(240,165,0,0.05)', minHeight: 0, cursor: selectedAttackerId && canHitFace ? 'crosshair' : 'default' }}>
-          {o.board.length === 0 ? (
+          {oppBoardList.length === 0 ? (
             <div style={{ color: 'rgba(232,220,200,0.12)', fontSize: 11, border: `1px dashed ${selectedAttackerId && canHitFace ? 'rgba(248,113,113,0.35)' : 'rgba(255,255,255,0.05)'}`, borderRadius: 12, padding: '14px 40px', background: selectedAttackerId && canHitFace ? 'rgba(248,113,113,0.05)' : 'transparent' }}>
               {selectedAttackerId ? "Clicca qui per colpire l'Eroe!" : 'Nessuna creatura nemica'}
             </div>
           ) : (
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-              {o.board.map((m: any) => (
+              {oppBoardList.map((m: any) => (
                 <BoardMinion
                   key={m.instanceId}
                   minion={m}
                   side="opponent"
-                  isTarget={!!selectedAttackerId && (!enemyHasTaunt || m.hasTaunt)}
+                  isTarget={!dyingMinions[m.instanceId] && !!selectedAttackerId && (!enemyHasTaunt || m.hasTaunt)}
                   isAttacking={animAttackerId === m.instanceId}
                   attackDir="down"
                   hasSlash={!!slashTargets[m.instanceId]}
+                  hasSparks={!!sparksTargets[m.instanceId]}
+                  hasShieldBreak={!!shieldBreakTargets[m.instanceId]}
                   hasSpell={!!spellTargets[m.instanceId]}
+                  hasHeal={!!healTargets[m.instanceId]}
+                  isDying={!!dyingMinions[m.instanceId]}
                   floatingText={floatingTexts[m.instanceId]}
                   onInspect={setInspectCard}
-                  onClick={(e: any) => { e.stopPropagation?.(); if (selectedAttackerId) onAttack('minion', m.instanceId) }}
+                  onClick={(e: any) => { e.stopPropagation?.(); if (selectedAttackerId && !dyingMinions[m.instanceId]) onAttack('minion', m.instanceId) }}
                 />
               ))}
             </div>
@@ -939,24 +1070,28 @@ export function RealArena() {
 
         {/* Campo giocatore */}
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 16px', borderTop: '1px solid rgba(96,165,250,0.05)', minHeight: 0 }}>
-          {p.board.length === 0 ? (
+          {playerBoardList.length === 0 ? (
             <div style={{ color: 'rgba(232,220,200,0.12)', fontSize: 11, border: '1px dashed rgba(255,255,255,0.05)', borderRadius: 12, padding: '14px 40px' }}>Gioca una carta per evocarla</div>
           ) : (
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-              {p.board.map((m: any) => (
+              {playerBoardList.map((m: any) => (
                 <BoardMinion
                   key={m.instanceId}
                   minion={m}
                   side="player"
-                  selectable={isMyTurn && m.canAttack}
+                  selectable={!dyingMinions[m.instanceId] && isMyTurn && m.canAttack}
                   isSelected={selectedAttackerId === m.instanceId}
                   isAttacking={animAttackerId === m.instanceId}
                   attackDir="up"
                   hasSlash={!!slashTargets[m.instanceId]}
+                  hasSparks={!!sparksTargets[m.instanceId]}
+                  hasShieldBreak={!!shieldBreakTargets[m.instanceId]}
                   hasSpell={!!spellTargets[m.instanceId]}
+                  hasHeal={!!healTargets[m.instanceId]}
+                  isDying={!!dyingMinions[m.instanceId]}
                   floatingText={floatingTexts[m.instanceId]}
                   onInspect={setInspectCard}
-                  onClick={() => onFriendlyClick(m)}
+                  onClick={() => { if (!dyingMinions[m.instanceId]) onFriendlyClick(m) }}
                 />
               ))}
             </div>
@@ -971,7 +1106,10 @@ export function RealArena() {
           isOpponent={false}
           flash={pFlash}
           hasSlash={!!slashTargets['hero_player']}
+          hasSparks={!!sparksTargets['hero_player']}
+          hasShieldBreak={!!shieldBreakTargets['hero_player']}
           hasSpell={!!spellTargets['hero_player']}
+          hasHeal={!!healTargets['hero_player']}
           floatingText={floatingTexts['hero_player']}
           mana={p.mana}
           maxMana={p.maxMana}

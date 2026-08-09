@@ -1,10 +1,12 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { TactileCard, CARD_VARIANTS } from '../card/TactileCard';
 import {
   Sparkles, Save, Trash2, Download, Upload, Plus, Send,
-  CheckSquare, Square, CheckCircle2, AlertCircle, Copy, Image, Wand2, Palette, Crown, Move, RotateCcw
+  CheckSquare, Square, CheckCircle2, AlertCircle, Copy, Image, Wand2, Palette, Crown, Move, RotateCcw,
+  Scale, Zap, Swords, Heart, Shield, HelpCircle, Activity, Gauge, Flame, AlertTriangle, TrendingDown, ArrowRight, ArrowLeft, Info
 } from 'lucide-react';
 import { soundEngine } from '../../engine/soundEngine';
+import { analyzeCardBalance, suggestOptimalStats, suggestOptimalCost } from '../../engine/cardBalanceEngine';
 
 // Pre-packaged authentic indie-comic illustrations
 const PRESET_ILLUSTRATIONS = [
@@ -74,6 +76,47 @@ const VARIANT_LEVEL = { standard: 0, holo: 1, gold_foil: 2, full_art: 3, secret_
 // Pesi di drop di default quando si abilita una variante (più alta = più rara)
 const DEFAULT_VARIANT_WEIGHTS = { standard: 60, holo: 25, gold_foil: 10, full_art: 4, secret_holo: 1 };
 
+// Comprime un'immagine (data URL): ridimensiona il lato lungo a max `maxSize` px ed
+// esporta in WebP (mantiene la trasparenza) con la qualità data. Riduce il peso di
+// ~10-20x, così il catalogo non si gonfia e la pubblicazione non sfora i limiti.
+// Se qualcosa va storto o il risultato è più grande dell'originale, torna l'originale.
+function compressImageDataUrl(dataUrl, maxSize = 768, quality = 0.85) {
+  return new Promise((resolve) => {
+    try {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          let { width, height } = img;
+          if (!width || !height) { resolve(dataUrl); return; }
+          if (width > maxSize || height > maxSize) {
+            const scale = maxSize / Math.max(width, height);
+            width = Math.round(width * scale);
+            height = Math.round(height * scale);
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) { resolve(dataUrl); return; }
+          ctx.drawImage(img, 0, 0, width, height);
+          let out = canvas.toDataURL('image/webp', quality);
+          // Se il browser non supporta webp ripiega su png; tieni il più piccolo tra out e originale.
+          if (!out || out.indexOf('data:image/webp') !== 0) {
+            out = canvas.toDataURL('image/png');
+          }
+          resolve(out && out.length < dataUrl.length ? out : dataUrl);
+        } catch {
+          resolve(dataUrl);
+        }
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    } catch {
+      resolve(dataUrl);
+    }
+  });
+}
+
 export function CardStudio({
   cards = [],
   onSaveCard,
@@ -107,8 +150,41 @@ export function CardStudio({
 
   const [selectedCardIds, setSelectedCardIds] = useState(new Set());
   const [publishStatus, setPublishStatus] = useState(null);
+  const [publishMsg, setPublishMsg] = useState('');
   const [aiPromptSubject, setAiPromptSubject] = useState('un potente mago oscuro con tunica ricamata su pergamena antica');
   const [copiedPrompt, setCopiedPrompt] = useState(false);
+  const [balanceFlash, setBalanceFlash] = useState(null);
+
+  // Analisi automatica del bilanciamento in tempo reale
+  const balanceReport = useMemo(() => {
+    return analyzeCardBalance(editingCard);
+  }, [
+    editingCard.cost,
+    editingCard.atk,
+    editingCard.hp,
+    editingCard.type,
+    editingCard.rarity,
+    editingCard.abilityTitle,
+    editingCard.abilityText
+  ]);
+
+  // 1-Click Auto-Bilanciamento ATK / HP
+  const handleAutoBalanceStats = () => {
+    soundEngine.playLevelUp();
+    const { atk, hp } = suggestOptimalStats(editingCard);
+    setEditingCard(prev => ({ ...prev, atk, hp }));
+    setBalanceFlash('stats');
+    setTimeout(() => setBalanceFlash(null), 2500);
+  };
+
+  // 1-Click Adatta Costo Mana
+  const handleAutoBalanceCost = () => {
+    soundEngine.playLevelUp();
+    const cost = suggestOptimalCost(editingCard);
+    setEditingCard(prev => ({ ...prev, cost }));
+    setBalanceFlash('cost');
+    setTimeout(() => setBalanceFlash(null), 2500);
+  };
 
   // Trascinamento immagine nel riquadro di inquadratura
   const framerRef = useRef(null);
@@ -247,10 +323,13 @@ export function CardStudio({
 
     soundEngine.playButtonClick();
     const reader = new FileReader();
-    reader.onload = (uploadEvent) => {
+    reader.onload = async (uploadEvent) => {
+      // Comprime l'immagine prima di salvarla: evita cataloghi enormi e errori di
+      // pubblicazione (payload troppo grande). Se la compressione fallisce, usa l'originale.
+      const compressed = await compressImageDataUrl(uploadEvent.target.result);
       setEditingCard(prev => ({
         ...prev,
-        imageUrl: uploadEvent.target.result,
+        imageUrl: compressed,
         imageScale: 1,
         imageOffsetX: 0,
         imageOffsetY: 0
@@ -320,23 +399,39 @@ export function CardStudio({
   const handlePublishToServer = async () => {
     soundEngine.playLegendaryFanfare();
     setPublishStatus('publishing');
+    setPublishMsg('');
     try {
+      let result;
       if (onPublishCards) {
-        await onPublishCards(cards);
+        result = await onPublishCards(cards);
       } else {
         const res = await fetch('http://localhost:4000/api/cards', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ cards })
         });
-        if (!res.ok) throw new Error('Errore di pubblicazione');
+        result = { ok: res.ok, status: res.status };
       }
-      setPublishStatus('success');
-      setTimeout(() => setPublishStatus(null), 4000);
+
+      if (result && result.ok) {
+        setPublishStatus('success');
+        setTimeout(() => setPublishStatus(null), 4000);
+      } else {
+        // Pubblicazione fallita ma il lavoro è comunque salvato in locale.
+        const msg = result?.status === 413
+          ? 'Immagini troppo pesanti per il server. Le carte sono al sicuro in locale: le nuove immagini vengono compresse automaticamente, riprova a pubblicare.'
+          : result?.networkError
+          ? 'Server non raggiungibile (porta 4000). Le carte sono salvate in locale: avvia il backend con "npm run server" e ripubblica.'
+          : `Il server ha rifiutato la pubblicazione${result?.status ? ` (codice ${result.status})` : ''}. Le carte sono salvate in locale.`;
+        setPublishMsg(msg);
+        setPublishStatus('error');
+        setTimeout(() => setPublishStatus(null), 7000);
+      }
     } catch (err) {
-      console.error(err);
+      console.error('Publish error:', err);
+      setPublishMsg('Errore imprevisto durante la pubblicazione. Le carte restano salvate in locale, riprova.');
       setPublishStatus('error');
-      setTimeout(() => setPublishStatus(null), 4000);
+      setTimeout(() => setPublishStatus(null), 7000);
     }
   };
 
@@ -362,6 +457,14 @@ export function CardStudio({
 
         {/* Action Controls */}
         <div className="flex items-center gap-2.5 flex-wrap">
+          <a
+            href="#"
+            onClick={(e) => { e.preventDefault(); window.location.hash = ''; }}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800/80 hover:bg-slate-700 text-amber-300 rounded-xl text-xs font-bold border border-amber-500/30 transition shadow-sm hover:border-amber-400"
+          >
+            <ArrowLeft className="w-4 h-4" /> Torna al Gioco
+          </a>
+
           <button
             onClick={handleCreateNew}
             className="flex items-center gap-1.5 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold border border-slate-700 transition"
@@ -413,10 +516,10 @@ export function CardStudio({
       {publishStatus === 'error' && (
         <div className="bg-rose-950/80 border border-rose-500 text-rose-300 p-4 rounded-xl flex items-center justify-between text-sm shadow-xl">
           <div className="flex items-center gap-3">
-            <AlertCircle className="w-5 h-5 text-rose-400" />
+            <AlertCircle className="w-5 h-5 text-rose-400 flex-shrink-0" />
             <div>
-              <p className="font-bold">Errore di comunicazione con il Server (porta 4000)</p>
-              <p className="text-xs text-rose-400/80">Assicurati che il backend sia avviato con `npm run server`.</p>
+              <p className="font-bold">Pubblicazione non riuscita — carte al sicuro in locale</p>
+              <p className="text-xs text-rose-400/80">{publishMsg || 'Riprova, oppure assicurati che il backend sia avviato con `npm run server`.'}</p>
             </div>
           </div>
         </div>
@@ -696,9 +799,16 @@ export function CardStudio({
 
             {/* Cost */}
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
-                Costo Mana (Nastro a Sx)
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  Costo Mana (Nastro a Sx)
+                </label>
+                {balanceReport.suggestedCost !== editingCard.cost && (
+                  <span className="text-[10px] text-amber-400 font-mono">
+                    Consigliato: {balanceReport.suggestedCost}
+                  </span>
+                )}
+              </div>
               <input
                 type="number"
                 min="0"
@@ -711,9 +821,16 @@ export function CardStudio({
 
             {/* Attack */}
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
-                Forza Attacco (ATK)
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  Forza Attacco (ATK)
+                </label>
+                {balanceReport.suggestedAtk !== editingCard.atk && (
+                  <span className="text-[10px] text-emerald-400 font-mono">
+                    Target: {balanceReport.suggestedAtk}
+                  </span>
+                )}
+              </div>
               <input
                 type="number"
                 min="0"
@@ -726,9 +843,16 @@ export function CardStudio({
 
             {/* HP */}
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
-                Punti Vita (HP)
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  Punti Vita (HP)
+                </label>
+                {balanceReport.suggestedHp !== editingCard.hp && (
+                  <span className="text-[10px] text-emerald-400 font-mono">
+                    Target: {balanceReport.suggestedHp}
+                  </span>
+                )}
+              </div>
               <input
                 type="number"
                 min="1"
@@ -750,10 +874,10 @@ export function CardStudio({
                 className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 font-semibold focus:outline-none focus:border-amber-400"
               >
                 <option value="common">Comune</option>
-                <option value="rare">Rara</option>
-                <option value="epic">Epica</option>
-                <option value="legendary">Leggendaria</option>
-                <option value="mythic">Mitica</option>
+                <option value="rare">Rara (+0.5 pt bonus)</option>
+                <option value="epic">Epica (+1.0 pt bonus)</option>
+                <option value="legendary">Leggendaria (+1.5 pt bonus)</option>
+                <option value="mythic">Mitica (+2.0 pt bonus)</option>
               </select>
             </div>
 
@@ -775,13 +899,13 @@ export function CardStudio({
           {/* Ability Text */}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
-              Descrizione Effetto & Meccaniche
+              Descrizione Effetto & Meccaniche (Interpretato in tempo reale dal Bilanciatore)
             </label>
             <textarea
               rows="2"
               value={editingCard.abilityText}
               onChange={(e) => handleInputChange('abilityText', e.target.value)}
-              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-amber-400"
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-amber-400 font-sans"
             />
           </div>
 
@@ -798,11 +922,211 @@ export function CardStudio({
             />
           </div>
 
+          {/* ═════════════════════════════════════════════════════════════════════════ */}
+          {/* ⚖️ CARD BALANCE STUDIO PANEL (Real-time Vanilla Test & Mana Budget Meter) */}
+          {/* ═════════════════════════════════════════════════════════════════════════ */}
+          <div className="bg-gradient-to-br from-[#0c1322] via-[#111927] to-[#141e30] p-4 md:p-5 rounded-2xl border border-slate-700/80 shadow-2xl space-y-4">
+            
+            {/* Header: Title + Dynamic Status Badge */}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400">
+                  <Scale className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-xs font-black uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+                    Bilanciamento Automatico TCG
+                    <span className="text-[10px] font-normal text-slate-400 font-mono">(Vanilla Test Standard)</span>
+                  </div>
+                  <div className="text-[11px] text-slate-400">
+                    Valuta in tempo reale Mana, Statistiche ed Effetti speciali scritti nel testo.
+                  </div>
+                </div>
+              </div>
+
+              {/* Status Badge */}
+              <div
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black border shadow-sm transition-all"
+                style={{
+                  backgroundColor: `${balanceReport.statusColor}18`,
+                  borderColor: `${balanceReport.statusColor}55`,
+                  color: balanceReport.statusColor
+                }}
+              >
+                <span className="text-sm">{balanceReport.statusIcon}</span>
+                <span>{balanceReport.balanceRatio}% · {balanceReport.statusLabel}</span>
+              </div>
+            </div>
+
+            {/* Visual Balance Gauge (Multi-Zone Meter) */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                <span>Indicatore di Potere</span>
+                <span className="font-mono text-slate-200">
+                  Punti: <strong className="text-amber-300">{balanceReport.powerScore}</strong> / Budget Ideale: <strong className="text-emerald-300">{balanceReport.targetBudget}</strong>
+                </span>
+              </div>
+
+              {/* Progress Track */}
+              <div className="relative h-4 rounded-full bg-slate-950/80 border border-slate-800 overflow-hidden p-0.5 shadow-inner">
+                {/* 4 Colored Zones */}
+                <div className="absolute inset-0 flex">
+                  {/* Underpowered: 0-40% of track (= 0-80% ratio) */}
+                  <div className="w-[40%] bg-gradient-to-r from-sky-600/40 to-sky-500/40 border-r border-sky-400/30" />
+                  {/* Balanced: 40-57.5% of track (= 80-115% ratio) */}
+                  <div className="w-[17.5%] bg-gradient-to-r from-emerald-600/60 to-emerald-500/60 border-r border-emerald-400/40" />
+                  {/* Strong: 57.5-67.5% of track (= 116-135% ratio) */}
+                  <div className="w-[10%] bg-gradient-to-r from-amber-600/60 to-amber-500/60 border-r border-amber-400/40" />
+                  {/* Overpowered: 67.5-100% of track (= >135% ratio) */}
+                  <div className="w-[32.5%] bg-gradient-to-r from-rose-600/60 to-rose-500/70" />
+                </div>
+
+                {/* Animated Needle Marker */}
+                <div
+                  className="absolute top-0 bottom-0 w-2 -ml-1 bg-white rounded-full shadow-[0_0_10px_#ffffff] transition-all duration-300 ease-out z-10"
+                  style={{
+                    left: `${Math.max(2, Math.min(98, (balanceReport.balanceRatio / 200) * 100))}%`
+                  }}
+                />
+              </div>
+
+              {/* Zone Labels */}
+              <div className="flex items-center justify-between text-[9px] text-slate-400 pt-0.5">
+                <span className="text-sky-400 font-semibold">📉 Debole (&lt;80%)</span>
+                <span className="text-emerald-400 font-semibold">⚖️ Bilanciata (80-115%)</span>
+                <span className="text-amber-400 font-semibold">⚠️ Forte (116-135%)</span>
+                <span className="text-rose-400 font-semibold">🔥 OP (&gt;135%)</span>
+              </div>
+            </div>
+
+            {/* Breakdown Grid: Transparent Math */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+              
+              {/* Stat Points */}
+              <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+                <div className="text-[10px] text-slate-400 uppercase font-semibold flex items-center gap-1">
+                  <Swords className="w-3 h-3 text-amber-400" /> Stats Base
+                </div>
+                <div className="text-sm font-mono font-bold text-slate-100 mt-0.5">
+                  +{balanceReport.statPoints} <span className="text-[10px] text-slate-400 font-normal">({editingCard.atk} + {editingCard.hp})</span>
+                </div>
+              </div>
+
+              {/* Effects Points */}
+              <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+                <div className="text-[10px] text-slate-400 uppercase font-semibold flex items-center gap-1">
+                  <Sparkles className="w-3 h-3 text-purple-400" /> Effetti Rilevati
+                </div>
+                <div className="text-sm font-mono font-bold text-purple-300 mt-0.5">
+                  +{balanceReport.effectsPoints.toFixed(1)} <span className="text-[10px] text-slate-400 font-normal">pt</span>
+                </div>
+              </div>
+
+              {/* Rarity Discount */}
+              <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+                <div className="text-[10px] text-slate-400 uppercase font-semibold flex items-center gap-1">
+                  <Crown className="w-3 h-3 text-amber-400" /> Bonus Rarità
+                </div>
+                <div className="text-sm font-mono font-bold text-amber-300 mt-0.5">
+                  -{balanceReport.rarityBonus} <span className="text-[10px] text-slate-400 font-normal">({editingCard.rarity})</span>
+                </div>
+              </div>
+
+              {/* Target Budget */}
+              <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+                <div className="text-[10px] text-slate-400 uppercase font-semibold flex items-center gap-1">
+                  <Gauge className="w-3 h-3 text-emerald-400" /> Budget Mana
+                </div>
+                <div className="text-sm font-mono font-bold text-emerald-300 mt-0.5">
+                  {balanceReport.targetBudget} <span className="text-[10px] text-slate-400 font-normal">(per {editingCard.cost} Mana)</span>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Detected Effects Badges List */}
+            <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-800/60 space-y-1.5">
+              <div className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5 text-amber-400" /> Effetti Speciali Riconosciuti nel Testo:
+              </div>
+              {balanceReport.detectedEffects.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {balanceReport.detectedEffects.map(eff => (
+                    <div
+                      key={eff.id}
+                      title={eff.description}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-purple-950/40 border border-purple-500/30 text-purple-200 text-xs font-semibold"
+                    >
+                      <span>{eff.icon}</span>
+                      <span>{eff.label}</span>
+                      <span className="text-[10px] font-mono text-purple-400 bg-purple-900/60 px-1 py-0.2 rounded">
+                        +{eff.points} pt
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-500 italic">
+                  Nessun effetto speciale quantificato (la carta è trattata come creatura vanilla con sole statistiche base).
+                </p>
+              )}
+            </div>
+
+            {/* Action Buttons: 1-Click Auto-Balancing */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+              
+              {/* Button 1: Auto-Balance ATK/HP */}
+              <button
+                type="button"
+                onClick={handleAutoBalanceStats}
+                className="py-2.5 px-3 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 hover:border-emerald-400 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition hover:scale-[1.02] active:scale-[0.98] shadow-sm"
+              >
+                <Wand2 className="w-4 h-4 text-emerald-400" />
+                Auto-Bilancia ATK / HP ({balanceReport.suggestedAtk}/{balanceReport.suggestedHp})
+              </button>
+
+              {/* Button 2: Auto-Balance Mana Cost */}
+              <button
+                type="button"
+                onClick={handleAutoBalanceCost}
+                className="py-2.5 px-3 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 hover:border-amber-400 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition hover:scale-[1.02] active:scale-[0.98] shadow-sm"
+              >
+                <Zap className="w-4 h-4 text-amber-400" />
+                Adatta Costo Mana ({balanceReport.suggestedCost} Mana)
+              </button>
+
+            </div>
+
+            {/* Flash Feedback Message */}
+            {balanceFlash && (
+              <div className="flex items-center gap-2 text-xs text-emerald-300 bg-emerald-950/60 border border-emerald-500/40 rounded-xl p-2.5 animate-bounce">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                {balanceFlash === 'stats'
+                  ? `Statistiche aggiornate con successo a ${editingCard.atk} ATK / ${editingCard.hp} HP!`
+                  : `Costo in Mana aggiornato a ${editingCard.cost} Mana!`}
+              </div>
+            )}
+
+            {/* Didactic Advice & Tips Box */}
+            <div className="text-[11px] text-slate-300 bg-slate-950/80 border border-slate-800 rounded-xl p-3 space-y-1">
+              <div className="font-bold text-amber-400 flex items-center gap-1.5 text-xs">
+                <Info className="w-3.5 h-3.5" /> Guida & Suggerimenti di Bilanciamento:
+              </div>
+              {balanceReport.advice.map((line, idx) => (
+                <div key={idx} className="text-slate-300 leading-relaxed flex items-start gap-1.5">
+                  <span className="text-amber-400/80">•</span>
+                  <span>{line}</span>
+                </div>
+              ))}
+            </div>
+
+          </div>
+
           {/* SAVE BUTTON */}
           <button
             type="button"
             onClick={handleSave}
-            className="w-full py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black rounded-xl text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 transition hover:scale-[1.01] active:scale-[0.99]"
+            className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black rounded-xl text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-xl shadow-amber-500/20 transition hover:scale-[1.01] active:scale-[0.99]"
           >
             <Save className="w-5 h-5" /> Salva Carta nel Catalogo
           </button>
@@ -907,6 +1231,7 @@ export function CardStudio({
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
             {cards.map(card => {
               const isSelected = selectedCardIds.has(card.id);
+              const cardBal = analyzeCardBalance(card);
 
               return (
                 <div 
@@ -955,6 +1280,20 @@ export function CardStudio({
                   <span className="text-[11px] font-bold text-slate-300 truncate w-full text-center mt-1">
                     {card.name}
                   </span>
+
+                  {/* Balance badge for each catalog card */}
+                  <div
+                    className="mt-1 px-2 py-0.5 rounded-md text-[10px] font-bold border flex items-center gap-1"
+                    style={{
+                      backgroundColor: `${cardBal.statusColor}15`,
+                      borderColor: `${cardBal.statusColor}40`,
+                      color: cardBal.statusColor
+                    }}
+                    title={`Bilanciamento: ${cardBal.balanceRatio}% (${cardBal.statusLabel})`}
+                  >
+                    <span>{cardBal.statusIcon}</span>
+                    <span>{cardBal.balanceRatio}%</span>
+                  </div>
                 </div>
               );
             })}

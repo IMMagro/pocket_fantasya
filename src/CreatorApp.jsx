@@ -23,9 +23,12 @@ export function CreatorApp() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [socket, setSocket] = useState(null);
 
-  // Sync to server helper
+  // Sync to server helper. Ritorna sempre un esito e salva SEMPRE in locale (a prova
+  // di errore: la carta non va mai persa, anche se il server rifiuta o è spento).
   const syncCardsToServer = useCallback(async (cardsToSave) => {
     setIsSyncing(true);
+    // Salvataggio locale immediato: garantisce che il lavoro non si perda mai.
+    try { localStorage.setItem(STORAGE_KEY_CREATOR, JSON.stringify(cardsToSave)); } catch {}
     try {
       const res = await fetch('http://localhost:4000/api/cards', {
         method: 'POST',
@@ -33,14 +36,16 @@ export function CreatorApp() {
         body: JSON.stringify({ cards: cardsToSave })
       });
       if (res.ok) {
-        localStorage.setItem(STORAGE_KEY_CREATOR, JSON.stringify(cardsToSave));
         if (broadcastChannel) {
           broadcastChannel.postMessage({ type: 'CARDS_UPDATED', cards: cardsToSave });
         }
+        return { ok: true, savedLocally: true };
       }
+      // Il server ha risposto ma con errore (es. 413 payload troppo grande)
+      return { ok: false, savedLocally: true, status: res.status };
     } catch (err) {
-      console.warn('Backend server unreachable, saved locally.', err);
-      localStorage.setItem(STORAGE_KEY_CREATOR, JSON.stringify(cardsToSave));
+      console.warn('Server non raggiungibile, salvato in locale.', err);
+      return { ok: false, savedLocally: true, networkError: true };
     } finally {
       setIsSyncing(false);
     }
@@ -134,8 +139,8 @@ export function CreatorApp() {
 
   // Manual Publish to Server
   const handlePublishCards = async (cardsToPublish) => {
-    await syncCardsToServer(cardsToPublish);
-    return { success: true, count: cardsToPublish.length };
+    const result = await syncCardsToServer(cardsToPublish);
+    return { ...result, count: cardsToPublish.length };
   };
 
   const handleExportCards = () => {

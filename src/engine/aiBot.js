@@ -31,20 +31,20 @@ export async function executeAiTurn(gameState, onStateUpdate, onSoundTrigger) {
     if (playerTaunts.length > 0) {
       // Deve colpire prima un GUARDIANO
       const targetTaunt = playerTaunts[0];
+      if (onSoundTrigger) onSoundTrigger('attack', { attackerId: minion.instanceId, targetKey: targetTaunt.instanceId, damage: minion.atk });
       currentState = attackTarget(currentState, false, minion.instanceId, 'minion', targetTaunt.instanceId);
-      if (onSoundTrigger) onSoundTrigger('attack');
       onStateUpdate(currentState);
     } else if (playerBoard.length > 0) {
       // Ci sono creature: obbligato ad affrontarle (niente attacco diretto all'Eroe).
       // Sceglie il bersaglio con meno HP (kill) o comunque il primo disponibile.
       const targetMinion = [...playerBoard].sort((a, b) => (a.currentHp ?? a.hp) - (b.currentHp ?? b.hp))[0];
+      if (onSoundTrigger) onSoundTrigger('attack', { attackerId: minion.instanceId, targetKey: targetMinion.instanceId, damage: minion.atk });
       currentState = attackTarget(currentState, false, minion.instanceId, 'minion', targetMinion.instanceId);
-      if (onSoundTrigger) onSoundTrigger('attack');
       onStateUpdate(currentState);
     } else {
       // Campo libero: attacca l'Eroe
+      if (onSoundTrigger) onSoundTrigger('attack', { attackerId: minion.instanceId, targetKey: 'hero_player', damage: minion.atk });
       currentState = attackTarget(currentState, false, minion.instanceId, 'hero');
-      if (onSoundTrigger) onSoundTrigger('damage');
       onStateUpdate(currentState);
     }
 

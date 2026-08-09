@@ -101,29 +101,183 @@ body {
 
 /* ── Combat Animations & Screen Shakes ───────────────────────────────── */
 @keyframes attackLungeUp {
-  0% { transform: scale(1) translateY(0); }
-  25% { transform: scale(1.05) translateY(6px); }
-  45% { transform: scale(1.22) translateY(-48px) rotate(-4deg); box-shadow: 0 0 30px rgba(240,165,0,0.8); }
-  70% { transform: scale(1.15) translateY(-32px); }
-  100% { transform: scale(1) translateY(0); }
+  0% { transform: scale(1) translateY(0) rotate(0deg); filter: drop-shadow(0 0 0 transparent); }
+  20% { transform: scale(1.08) translateY(12px) rotate(2deg); filter: drop-shadow(0 0 15px rgba(240,165,0,0.6)); }
+  45% { transform: scale(1.28) translateY(-78px) rotate(-6deg); filter: drop-shadow(0 0 35px rgba(240,165,0,0.95)) brightness(1.2); z-index: 70; }
+  60% { transform: scale(1.22) translateY(-68px) rotate(-2deg); filter: drop-shadow(0 0 25px rgba(255,215,0,0.8)); }
+  80% { transform: scale(1.06) translateY(-20px) rotate(1deg); }
+  100% { transform: scale(1) translateY(0) rotate(0deg); filter: drop-shadow(0 0 0 transparent); }
 }
 
 @keyframes attackLungeDown {
-  0% { transform: scale(1) translateY(0); }
-  25% { transform: scale(1.05) translateY(-6px); }
-  45% { transform: scale(1.22) translateY(48px) rotate(4deg); box-shadow: 0 0 30px rgba(248,113,113,0.8); }
-  70% { transform: scale(1.15) translateY(32px); }
-  100% { transform: scale(1) translateY(0); }
+  0% { transform: scale(1) translateY(0) rotate(0deg); filter: drop-shadow(0 0 0 transparent); }
+  20% { transform: scale(1.08) translateY(-12px) rotate(-2deg); filter: drop-shadow(0 0 15px rgba(248,113,113,0.6)); }
+  45% { transform: scale(1.28) translateY(78px) rotate(6deg); filter: drop-shadow(0 0 35px rgba(248,113,113,0.95)) brightness(1.2); z-index: 70; }
+  60% { transform: scale(1.22) translateY(68px) rotate(2deg); filter: drop-shadow(0 0 25px rgba(248,113,113,0.8)); }
+  80% { transform: scale(1.06) translateY(20px) rotate(-1deg); }
+  100% { transform: scale(1) translateY(0) rotate(0deg); filter: drop-shadow(0 0 0 transparent); }
 }
 
 .anim-attack-up {
-  animation: attackLungeUp 0.5s cubic-bezier(0.25, 1, 0.5, 1) forwards !important;
-  z-index: 40 !important;
+  animation: attackLungeUp 0.52s cubic-bezier(0.22, 1, 0.36, 1) forwards !important;
+  z-index: 70 !important;
 }
 
 .anim-attack-down {
-  animation: attackLungeDown 0.5s cubic-bezier(0.25, 1, 0.5, 1) forwards !important;
-  z-index: 40 !important;
+  animation: attackLungeDown 0.52s cubic-bezier(0.22, 1, 0.36, 1) forwards !important;
+  z-index: 70 !important;
+}
+
+/* Minion Death Disintegrate / Dissolve */
+@keyframes deathShatterDissolve {
+  0% {
+    transform: scale(1) rotate(0deg);
+    filter: brightness(1.8) contrast(1.2) drop-shadow(0 0 25px #f87171);
+    opacity: 1;
+  }
+  25% {
+    transform: scale(1.06) rotate(3deg);
+    filter: grayscale(0.5) brightness(0.6) contrast(2) drop-shadow(0 0 30px #dc2626);
+    opacity: 0.9;
+  }
+  60% {
+    transform: scale(0.75) translateY(20px) rotate(-8deg);
+    filter: grayscale(1) brightness(0.2) blur(2px);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(0.3) translateY(45px) rotate(18deg);
+    filter: grayscale(1) brightness(0.05) blur(6px);
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+.minion-dying-dissolve {
+  animation: deathShatterDissolve 0.65s cubic-bezier(0.4, 0, 0.2, 1) forwards !important;
+  pointer-events: none !important;
+  z-index: 35 !important;
+}
+
+/* Impact Sparks & Blast Effect */
+@keyframes impactSparksBurst {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(0.3) rotate(0deg);
+  }
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.3) rotate(45deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(2.0) rotate(90deg);
+  }
+}
+
+.impact-sparks-fx {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 90px;
+  height: 90px;
+  background: radial-gradient(circle, #fff 0%, #ffd700 35%, #ea580c 65%, transparent 75%);
+  border-radius: 50%;
+  box-shadow: 0 0 30px #ffd700, 0 0 50px #dc2626;
+  animation: impactSparksBurst 0.45s ease-out forwards;
+  pointer-events: none;
+  z-index: 55;
+}
+
+/* Shield Deflect Barrier Effect */
+@keyframes shieldDeflectPulse {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.5);
+  }
+  30% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.15);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.6);
+  }
+}
+
+.shield-deflect-fx {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 110px;
+  height: 110px;
+  border: 3px solid #38bdf8;
+  background: radial-gradient(circle, rgba(56,189,248,0.3) 0%, rgba(14,165,233,0.1) 60%, transparent 80%);
+  border-radius: 20px;
+  box-shadow: 0 0 35px #38bdf8, inset 0 0 25px #0284c7;
+  animation: shieldDeflectPulse 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  pointer-events: none;
+  z-index: 55;
+}
+
+/* Magic Heal Aura Effect */
+@keyframes magicHealAura {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.4) translateY(20px);
+  }
+  40% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.2) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.5) translateY(-30px);
+  }
+}
+
+.magic-aura-heal-fx {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(74,222,128,0.4) 0%, rgba(34,197,94,0.15) 50%, transparent 75%);
+  box-shadow: 0 0 40px #4ade80, inset 0 0 25px #22c55e;
+  animation: magicHealAura 0.75s ease-out forwards;
+  pointer-events: none;
+  z-index: 55;
+}
+
+/* Magic Fire Burst Effect */
+@keyframes magicFireBurst {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.3);
+  }
+  30% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.3);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(2.2);
+  }
+}
+
+.magic-aura-fire-fx {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.9) 0%, rgba(249,115,22,0.6) 40%, rgba(220,38,38,0.3) 70%, transparent 85%);
+  box-shadow: 0 0 45px #f97316, 0 0 70px #dc2626;
+  animation: magicFireBurst 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  pointer-events: none;
+  z-index: 55;
 }
 
 /* Floating Combat Text (-X / +X) */

@@ -49,7 +49,10 @@ export function useRealCards() {
 }
 
 // Tile carta reale per catalogo / collezione (Compatta con stile 1:1 Tactile)
-export function RealCardTile({ card, onClick, badge, dimmed, selected }: any) {
+export function RealCardTile({ card, onClick, badge, dimmed, selected, level, canUpgrade, copiesProgress }: any) {
+  const cardLevel = level !== undefined ? level : card?.level
+  const isCreature = (card?.type || 'CREATURA').toUpperCase() === 'CREATURA'
+
   return (
     <div 
       onClick={onClick}
@@ -59,6 +62,7 @@ export function RealCardTile({ card, onClick, badge, dimmed, selected }: any) {
         opacity: dimmed ? 0.45 : 1,
         transform: selected ? 'scale(1.04)' : 'none',
         transition: 'transform 0.2s ease, opacity 0.2s ease',
+        cursor: onClick ? 'pointer' : 'default',
       }}
     >
       <TactileCard 
@@ -67,6 +71,36 @@ export function RealCardTile({ card, onClick, badge, dimmed, selected }: any) {
         interactive={!dimmed} 
         className={selected ? 'ring-4 ring-amber-400 rounded-[16px] shadow-glow-amber' : ''}
       />
+
+      {/* Badge Livello Carta Stile Clash Royale in alto a sinistra */}
+      {cardLevel !== undefined && (
+        <div style={{
+          position: 'absolute',
+          top: 6,
+          left: 6,
+          background: cardLevel > 1 
+            ? 'linear-gradient(135deg, #1e293b, #0f172a)' 
+            : 'rgba(15,23,42,0.85)',
+          color: cardLevel > 1 ? '#38bdf8' : 'rgba(232,220,200,0.7)',
+          border: cardLevel > 1 ? '1px solid #38bdf888' : '1px solid rgba(255,255,255,0.15)',
+          borderRadius: 8,
+          padding: '2px 6px',
+          fontSize: 9,
+          fontWeight: 800,
+          fontFamily: 'Cinzel, serif',
+          boxShadow: cardLevel > 1 ? '0 0 10px rgba(56,189,248,0.3)' : '0 2px 6px rgba(0,0,0,0.5)',
+          zIndex: 30,
+          pointerEvents: 'none',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 3,
+        }}>
+          <span style={{ color: cardLevel > 1 ? '#f0a500' : 'inherit', fontSize: 8 }}>★</span>
+          <span>LIV. {cardLevel}</span>
+        </div>
+      )}
+
+      {/* Badge Copie / Custom Badge in alto a destra */}
       {badge !== undefined && badge !== null && (
         <div style={{
           position: 'absolute',
@@ -84,6 +118,77 @@ export function RealCardTile({ card, onClick, badge, dimmed, selected }: any) {
           pointerEvents: 'none'
         }}>
           {badge}
+        </div>
+      )}
+
+      {/* Indicatore "Pronto per l'Upgrade" in basso */}
+      {canUpgrade && (
+        <div style={{
+          position: 'absolute',
+          bottom: 8,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'linear-gradient(135deg, #10b981, #059669)',
+          color: '#ffffff',
+          padding: '2px 8px',
+          borderRadius: 10,
+          fontSize: 8.5,
+          fontWeight: 900,
+          fontFamily: 'Cinzel, serif',
+          whiteSpace: 'nowrap',
+          border: '1.5px solid #ffffff',
+          boxShadow: '0 0 12px rgba(16,185,129,0.7), 0 2px 6px rgba(0,0,0,0.8)',
+          zIndex: 35,
+          animation: 'badge-pulse 1.5s infinite',
+          pointerEvents: 'none',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 3,
+        }}>
+          <span>⬆️</span> MIGLIORA
+        </div>
+      )}
+
+      {/* Barra Progresso Copie Stile Clash Royale sotto la carta */}
+      {copiesProgress && (
+        <div style={{
+          position: 'absolute',
+          bottom: -16,
+          left: 4,
+          right: 4,
+          height: 12,
+          background: 'rgba(15,23,42,0.95)',
+          border: '1px solid rgba(240,165,0,0.3)',
+          borderRadius: 6,
+          overflow: 'hidden',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxShadow: '0 2px 6px rgba(0,0,0,0.6)',
+          zIndex: 25,
+        }}>
+          <div style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: `${Math.min(100, Math.round((copiesProgress.current / Math.max(1, copiesProgress.max)) * 100))}%`,
+            background: copiesProgress.current >= copiesProgress.max 
+              ? 'linear-gradient(90deg, #10b981, #34d399)' 
+              : 'linear-gradient(90deg, #0284c7, #38bdf8)',
+            transition: 'width 0.3s ease',
+          }} />
+          <span style={{
+            position: 'relative',
+            zIndex: 2,
+            fontSize: 7.5,
+            fontWeight: 800,
+            fontFamily: 'Cinzel, serif',
+            color: '#ffffff',
+            textShadow: '0 1px 2px #000',
+          }}>
+            {copiesProgress.current}/{copiesProgress.max}
+          </span>
         </div>
       )}
     </div>
