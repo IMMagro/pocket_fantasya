@@ -1,4 +1,5 @@
 // Card Clash Combat & Game Engine
+import { CUSTOM_EFFECT_HANDLERS } from './effectCatalog.js';
 
 // ============================================================
 // TOKEN REGISTRY & FACTORY
@@ -389,8 +390,17 @@ function applyEffects(state, isPlayer, effects, sourceCard = null) {
         }
         break;
       }
-      default:
+      default: {
+        // Effetti futuri: cerca un handler registrato nel catalogo (estendibile).
+        const custom = CUSTOM_EFFECT_HANDLERS[effect.type];
+        if (typeof custom === 'function') {
+          custom({
+            state, isPlayer, active, enemy, effect, sourceCard,
+            helpers: { pushLog, dealDamageToHero, drawCard, cleanupDeadMinions, resolveDeathrattle, createTokenMinion }
+          });
+        }
         break;
+      }
     }
   });
 }

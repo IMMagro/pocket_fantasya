@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { soundEngine } from '../../engine/soundEngine';
 import { analyzeCardBalance, suggestOptimalStats, suggestOptimalCost } from '../../engine/cardBalanceEngine';
+import { STUDIO_INSTANT_EFFECTS, STUDIO_TURN_EFFECTS } from '../../engine/effectCatalog';
 
 // Pre-packaged authentic indie-comic illustrations
 const PRESET_ILLUSTRATIONS = [
@@ -999,7 +1000,7 @@ export function CardStudio({
                 type="button"
                 onClick={() => {
                   const currentEffects = editingCard.effects || {};
-                  const newBc = [...(currentEffects.battlecry || []), { type: 'damage', value: 1 }];
+                  const newBc = [...(currentEffects.battlecry || []), { type: 'hero_damage', value: 2 }];
                   handleInputChange('effects', { ...currentEffects, battlecry: newBc });
                 }}
                 className="text-xs bg-slate-800 border border-slate-600 px-2 py-1 rounded w-max hover:bg-slate-700 text-slate-200"
@@ -1018,13 +1019,9 @@ export function CardStudio({
                     }}
                     className="bg-slate-800 text-xs p-1 rounded border border-slate-600 text-slate-200"
                    >
-                     <option value="damage">Danno Diretto</option>
-                     <option value="heal">Cura Eroe</option>
-                     <option value="draw">Pesca Carta</option>
-                     <option value="steal_mana">Ruba Mana</option>
-                     <option value="steal_card">Ruba Carta in Mano</option>
-                     <option value="destroy_minion">Distruggi Creatura</option>
-                     <option value="summon_token">Evoca Carta/Token</option>
+                     {STUDIO_INSTANT_EFFECTS.map(ef => (
+                       <option key={ef.id} value={ef.id}>{ef.label}</option>
+                     ))}
                    </select>
                    
                    {bc.type === 'summon_token' ? (
@@ -1096,8 +1093,9 @@ export function CardStudio({
                     }}
                     className="bg-slate-800 text-xs p-1 rounded border border-slate-600 text-slate-200"
                    >
-                     <option value="hero_burn">Danno Eroe Nemico</option>
-                     <option value="spawn_token">Evoca Carta/Token</option>
+                     {STUDIO_TURN_EFFECTS.map(ef => (
+                       <option key={ef.id} value={ef.id}>{ef.label}</option>
+                     ))}
                    </select>
 
                    {tt.type === 'spawn_token' ? (
