@@ -5,6 +5,7 @@ import { createInitialGameState, playCard, attackTarget, endTurn, getCardEffecti
 import { executeAiTurn } from '../../engine/aiBot'
 import { soundEngine } from '../../engine/soundEngine'
 import { usePlayerEconomy, usePlayerInventory, applyCardLevelStats } from '../playerState'
+import { buildAiDeck } from '../aiDecks'
 
 // Le carte del gioco sono SOLO quelle create da te nel Card Creator Studio,
 // pubblicate sul server. Niente carte di default.
@@ -604,8 +605,9 @@ export function RealArena() {
     if (myDeck.deck.length < 2) return
     setIsMultiplayer(false); setIsHost(true)
     rewardGivenRef.current = false
-    // Giocatore col proprio mazzo; l'AI pesca da tutte le carte pubblicate.
-    const gs = createInitialGameState(myDeck.deck, cards, 'Tu', 'AI Bot Arena')
+    // Giocatore col proprio mazzo; l'AI usa un mazzo predefinito dell'espansione.
+    const aiDeck = buildAiDeck(cards)
+    const gs = createInitialGameState(myDeck.deck, aiDeck.length >= 2 ? aiDeck : cards, 'Tu', 'AI Bot Arena')
     prevHp.current = { p: 30, o: 30 }
     setGameState(gs)
     setSelectedAttackerId(null)
