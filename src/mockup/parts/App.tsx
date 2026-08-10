@@ -11,6 +11,7 @@ import { TactileCard } from '../../components/card/TactileCard'
 import { Missions } from './Missions'
 import { getMission } from '../campaign'
 import { usePlayerMissions } from '../questState'
+import { getHubHost, getHubUrl, hasHub, setHubUrl, normalizeHub, IS_PACKAGED_CLIENT } from '../serverConfig'
 
 // Ordine di rarità (alto → basso) per scegliere la carta più prestigiosa
 const RARITY_RANK: Record<string, number> = { mythic: 4, legendary: 3, epic: 2, rare: 1, common: 0 }
@@ -159,8 +160,75 @@ function RankBadge({ discoveredCount, totalCount, onOpenCollection }: { discover
   )
 }
 
+// Modale per configurare l'indirizzo dell'HUB (il PC che ospita il gioco).
+// mode 'setup' = primo avvio del client (bloccante); 'settings' = modifica manuale.
+function HubModal({ mode, onClose }: { mode: 'setup' | 'settings'; onClose: () => void }) {
+  const [val, setVal] = useState(mode === 'settings' ? getHubHost() : '')
+  const [testing, setTesting] = useState(false)
+  const [result, setResult] = useState<null | { ok: boolean; ip?: string }>(null)
+
+  const test = async () => {
+    setTesting(true); setResult(null)
+    try {
+      const r = await fetch(normalizeHub(val || 'localhost:4000') + '/api/info')
+      if (r.ok) { const d = await r.json(); setResult({ ok: true, ip: d.ip }) }
+      else setResult({ ok: false })
+    } catch { setResult({ ok: false }) }
+    setTesting(false)
+  }
+  const save = () => { setHubUrl(val || 'localhost:4000'); window.location.reload() }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, animation: 'fadeIn 0.2s ease both' }}>
+      <div style={{ width: 440, maxWidth: '100%', background: 'linear-gradient(160deg, rgba(18,14,8,0.98), rgba(8,8,14,0.99))', border: '1px solid rgba(240,165,0,0.25)', borderRadius: 18, padding: '28px 26px', boxShadow: '0 30px 80px rgba(0,0,0,0.8)', animation: 'slide-up 0.35s cubic-bezier(0.34,1.56,0.64,1) both' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: 'linear-gradient(135deg,#f0a500,#c8860a)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>📡</div>
+          <div>
+            <div className="font-cinzel" style={{ fontSize: 17, fontWeight: 700, color: '#f0a500', letterSpacing: '0.04em' }}>{mode === 'setup' ? 'Benvenuto in Pocket Fantasya' : 'Server del Gioco'}</div>
+            <div style={{ fontSize: 11, color: 'rgba(232,220,200,0.45)' }}>{mode === 'setup' ? 'Configura il collegamento al PC di gioco' : 'Cambia il PC a cui ti colleghi'}</div>
+          </div>
+        </div>
+        <div style={{ fontSize: 12, color: 'rgba(232,220,200,0.65)', lineHeight: 1.6, margin: '14px 0 16px' }}>
+          Inserisci l'<strong style={{ color: '#f0a500' }}>indirizzo IP del PC che ospita il gioco</strong> (quello di Massimiliano). Lo trovi nel gioco sul suo PC, in alto nell'Arena LAN. Esempio: <code style={{ color: '#93c5fd' }}>192.168.1.45</code>
+        </div>
+        <input value={val} onChange={e => { setVal(e.target.value); setResult(null) }} placeholder="es. 192.168.1.45  (la porta :4000 è automatica)" autoFocus
+          onKeyDown={e => { if (e.key === 'Enter') save() }}
+          style={{ width: '100%', padding: '12px 14px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(240,165,0,0.3)', borderRadius: 10, color: '#e8dcc8', fontSize: 15, fontFamily: 'JetBrains Mono, monospace', outline: 'none', letterSpacing: '0.02em' }} />
+        {result && (
+          <div style={{ marginTop: 10, fontSize: 12, color: result.ok ? '#4ade80' : '#f87171', display: 'flex', alignItems: 'center', gap: 6 }}>
+            {result.ok ? `✓ Connesso! Server rilevato${result.ip ? ' su ' + result.ip : ''}.` : '✗ Nessuna risposta. Controlla l\'IP, che il gioco sia avviato sul PC host e che siate sulla stessa rete.'}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+          <button onClick={test} disabled={testing} className="font-cinzel"
+            style={{ flex: '0 0 auto', padding: '11px 18px', borderRadius: 10, background: 'rgba(96,165,250,0.12)', border: '1px solid rgba(96,165,250,0.35)', color: '#93c5fd', fontSize: 12, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', cursor: testing ? 'wait' : 'pointer' }}>
+            {testing ? 'Controllo…' : 'Prova'}
+          </button>
+          <button onClick={save} className="btn-primary font-cinzel"
+            style={{ flex: 1, padding: '11px', borderRadius: 10, background: 'linear-gradient(135deg,#f0a500,#d4842a)', border: 'none', color: '#06080f', fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer' }}>
+            {mode === 'setup' ? 'Entra nel Gioco' : 'Salva e Ricarica'}
+          </button>
+          {mode === 'settings' && (
+            <button onClick={onClose} className="font-cinzel"
+              style={{ flex: '0 0 auto', padding: '11px 16px', borderRadius: 10, background: 'transparent', border: '1px solid rgba(255,255,255,0.12)', color: 'rgba(232,220,200,0.6)', fontSize: 12, letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}>
+              Annulla
+            </button>
+          )}
+        </div>
+        {mode === 'settings' && (
+          <div style={{ marginTop: 14, fontSize: 10, color: 'rgba(232,220,200,0.3)', textAlign: 'center' }}>Hub attuale: {getHubUrl()}</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   const [activeNav, setActiveNav] = useState('home')
+  // Config hub: 'setup' bloccante al primo avvio del client .exe; 'settings' su richiesta.
+  const [hubModal, setHubModal] = useState<null | 'setup' | 'settings'>(
+    IS_PACKAGED_CLIENT && !hasHub() ? 'setup' : null
+  )
   const [season, setSeason] = useState(0)
   const seasons = ['Stagione delle Fiamme', 'Stagione del Ghiaccio', 'Stagione del Tuono']
 
@@ -242,6 +310,7 @@ export default function App() {
 
   return (
     <div style={{ minHeight: '100vh', height: isFull ? '100vh' : undefined, background: '#06080f', position: 'relative', overflow: 'hidden' }}>
+      {hubModal && <HubModal mode={hubModal} onClose={() => setHubModal(null)} />}
       <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0 }}>
         <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 80% 60% at 50% 0%, rgba(30,15,5,0.9) 0%, #06080f 70%)' }} />
         <div className="glow-orb" style={{ position: 'absolute', left: '-10%', top: '20%', width: 500, height: 500, background: 'radial-gradient(circle, rgba(180,80,10,0.25) 0%, transparent 70%)', borderRadius: '50%' }} />
@@ -328,6 +397,12 @@ export default function App() {
             totalCount={baseGroups.length || 6} 
             onOpenCollection={() => setActiveNav('collection')} 
           />
+          <button onClick={() => setHubModal('settings')} title="Server del gioco (a quale PC ti colleghi)"
+            style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(13,17,32,0.8)', border: '1px solid rgba(240,165,0,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 15, padding: 0 }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = '#f0a500' }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(240,165,0,0.25)' }}>
+            📡
+          </button>
           <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'linear-gradient(135deg, #2d1a4a, #0d1120)', border: '2px solid rgba(240,165,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
             <Icon.wizard style={{ width: 16, height: 16, color: '#f0a500' }} />
           </div>

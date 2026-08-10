@@ -82,7 +82,7 @@ const DEFAULT_VARIANT_WEIGHTS = { standard: 60, holo: 25, gold_foil: 10, full_ar
 // esporta in WebP (mantiene la trasparenza) con la qualità data. Riduce il peso di
 // ~10-20x, così il catalogo non si gonfia e la pubblicazione non sfora i limiti.
 // Se qualcosa va storto o il risultato è più grande dell'originale, torna l'originale.
-function compressImageDataUrl(dataUrl, maxSize = 768, quality = 0.85) {
+function compressImageDataUrl(dataUrl, maxSize = 640, quality = 0.8) {
   return new Promise((resolve) => {
     try {
       const img = new Image();

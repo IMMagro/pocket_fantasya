@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react'
 import { io } from 'socket.io-client'
 import { TactileCard } from '../components/card/TactileCard'
-
-export const SERVER_URL = 'http://localhost:4000'
+import { getHubUrl } from './serverConfig'
 
 // Rarità delle carte REALI create nello Studio
 export const REAL_RARITY: Record<string, { color: string; label: string }> = {
@@ -26,7 +25,8 @@ export function useRealCards() {
   const [loaded, setLoaded] = useState(false)
   useEffect(() => {
     let alive = true
-    fetch(SERVER_URL + '/api/cards')
+    const hub = getHubUrl()
+    fetch(hub + '/api/cards')
       .then(r => r.json())
       .then(d => { 
         if (alive && Array.isArray(d)) { 
@@ -36,8 +36,8 @@ export function useRealCards() {
         } 
       })
       .catch(() => { if (alive) setLoaded(true) })
-    const s = io(SERVER_URL)
-    s.on('cards_updated', ({ cards: c }: any) => { 
+    const s = io(hub)
+    s.on('cards_updated', ({ cards: c }: any) => {
       if (alive && Array.isArray(c)) {
         const cleanList = c.map((card: any) => ({ ...card, name: cleanCardName(card.name) }))
         setCards(cleanList)

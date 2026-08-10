@@ -4,13 +4,15 @@
   "private": true,
   "type": "module",
   "description": "Card Clash: Custom TCG Arena & Studio with LAN Multiplayer & Pack Opening",
-  "main": "server/index.js",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "server": "node server/index.js",
-    "start": "node server/index.js"
+    "start": "node server/index.js",
+    "electron": "electron electron/main.cjs",
+    "dist:exe": "vite build && electron-builder --win portable"
   },
   "dependencies": {
     "canvas-confetti": "^1.9.4",
@@ -27,8 +29,28 @@
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3",
     "postcss": "^8.5.2",
     "tailwindcss": "^3.4.17",
     "vite": "^6.1.0"
+  },
+  "build": {
+    "appId": "com.pocketfantasya.client",
+    "productName": "Pocket Fantasya",
+    "directories": {
+      "output": "dist-exe"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "portable"
+    },
+    "portable": {
+      "artifactName": "Pocket-Fantasya.exe"
+    }
   }
 }

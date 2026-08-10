@@ -6,10 +6,10 @@ import { executeAiTurn } from '../../engine/aiBot'
 import { soundEngine } from '../../engine/soundEngine'
 import { usePlayerEconomy, usePlayerInventory, applyCardLevelStats } from '../playerState'
 import { buildAiDeck } from '../aiDecks'
+import { getHubUrl, getHubHost } from '../serverConfig'
 
 // Le carte del gioco sono SOLO quelle create da te nel Card Creator Studio,
-// pubblicate sul server. Niente carte di default.
-const SERVER_URL = 'http://localhost:4000'
+// pubblicate sull'hub. L'indirizzo dell'hub è configurabile (serverConfig).
 
 // Mazzo salvato dal Deck Builder
 const DECK_KEY = 'card_clash_newui_deck_v1'
@@ -268,10 +268,13 @@ function HandCard({ card, effectiveCost, isDiscounted, affordable, index = 0, to
 }
 
 // ── Barra Eroe con effetti di danno e suoni ──────────────────────────────────
-function HeroBar({ name, hp, shield, isOpponent, flash, hasSlash, hasSparks, hasShieldBreak, hasSpell, hasHeal, floatingText, mana, maxMana, maxHp = 30 }: any) {
+function HeroBar({ name, hp, shield, isOpponent, flash, hasSlash, hasSparks, hasShieldBreak, hasSpell, hasHeal, floatingText, mana, maxMana, maxHp = 30, targetable, onTargetClick, handCount }: any) {
   const col = isOpponent ? '#f87171' : '#60a5fa'
   return (
-    <div style={{ display: 'flex', alignItems: 'center', padding: '9px 16px', flexShrink: 0, background: `rgba(${isOpponent ? '248,113,113' : '96,165,250'},${flash ? '0.24' : '0.04'})`, borderTop: isOpponent ? 'none' : '1px solid rgba(96,165,250,0.1)', borderBottom: isOpponent ? '1px solid rgba(248,113,113,0.1)' : 'none', transition: 'background 0.25s ease', position: 'relative' }}>
+    <div
+      onClick={() => { if (targetable && onTargetClick) onTargetClick() }}
+      title={targetable ? "Colpisci l'Eroe avversario" : undefined}
+      style={{ display: 'flex', alignItems: 'center', padding: '9px 16px', flexShrink: 0, background: targetable ? 'rgba(248,113,113,0.14)' : `rgba(${isOpponent ? '248,113,113' : '96,165,250'},${flash ? '0.24' : '0.04'})`, borderTop: isOpponent ? 'none' : '1px solid rgba(96,165,250,0.1)', borderBottom: isOpponent ? '1px solid rgba(248,113,113,0.1)' : 'none', transition: 'background 0.25s ease', position: 'relative', cursor: targetable ? 'crosshair' : 'default', boxShadow: targetable ? 'inset 0 0 0 2px rgba(248,113,113,0.7), 0 0 22px rgba(248,113,113,0.35)' : 'none' }}>
       
       {/* Floating Combat Text on Hero */}
       {floatingText && (
@@ -310,6 +313,11 @@ function HeroBar({ name, hp, shield, isOpponent, flash, hasSlash, hasSparks, has
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
           <div className="font-cinzel" style={{ fontSize: 11, color: col, letterSpacing: '0.06em' }}>{name}</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {isOpponent && handCount != null && (
+              <span title="Carte in mano dell'avversario" style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, color: 'rgba(232,220,200,0.6)', fontWeight: 700 }}>
+                <Icon.cards style={{ width: 11, height: 11 }} />{handCount}
+              </span>
+            )}
             {shield > 0 && <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, color: '#93c5fd', fontWeight: 700 }}><Icon.shield style={{ width: 10, height: 10 }} />{shield}</span>}
             <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: isOpponent ? '#f87171' : '#4ade80', fontWeight: 700 }}><Icon.shield style={{ width: 11, height: 11 }} />{hp} / {maxHp}</span>
           </div>
@@ -353,6 +361,8 @@ export function RealArena({ mission }: { mission?: any } = {}) {
   const [pFlash, setPFlash] = useState(false)
   const [oFlash, setOFlash] = useState(false)
   const [cards, setCards] = useState<any[]>([])
+  const cardsRef = useRef<any[]>([])
+  cardsRef.current = cards
   const logRef = useRef<HTMLDivElement>(null)
   const prevHp = useRef({ p: 30, o: 30 })
 
@@ -386,7 +396,7 @@ export function RealArena({ mission }: { mission?: any } = {}) {
   const [isHost, setIsHost] = useState(true)
   const [playerName, setPlayerName] = useState('Tu')
   const [roomId, setRoomId] = useState(() => Math.floor(1000 + Math.random() * 9000).toString())
-  const [hostIp, setHostIp] = useState('localhost:4000')
+  const [hostIp, setHostIp] = useState(getHubHost())
   const [joinRoomId, setJoinRoomId] = useState('')
   const [matchRoom, setMatchRoom] = useState('')
   const [lanInfo, setLanInfo] = useState<any>(null)
@@ -497,15 +507,16 @@ export function RealArena({ mission }: { mission?: any } = {}) {
   // Carica SOLO le tue carte pubblicate dallo Studio, con sync live + info LAN.
   useEffect(() => {
     let alive = true
-    fetch(SERVER_URL + '/api/cards')
+    const hub = getHubUrl()
+    fetch(hub + '/api/cards')
       .then(r => r.json())
       .then(d => { if (alive && Array.isArray(d)) setCards(d) })
       .catch(() => {})
-    fetch(SERVER_URL + '/api/info')
+    fetch(hub + '/api/info')
       .then(r => r.json())
       .then(d => { if (alive && d) { setLanInfo(d); if (d.ip) setHostIp(`${d.ip}:${d.port || 4000}`) } })
       .catch(() => {})
-    const s = io(SERVER_URL)
+    const s = io(hub)
     s.on('cards_updated', ({ cards: c }: any) => { if (alive && Array.isArray(c)) setCards(c) })
     return () => { alive = false; s.disconnect() }
   }, [])
@@ -731,7 +742,7 @@ export function RealArena({ mission }: { mission?: any } = {}) {
         setGameState((prev: any) => endTurn(prev))
       } else if (action === 'fuse') {
         soundEngine.playMagicCast()
-        setGameState((prev: any) => fuseCards(prev, !isHost, payload.id1, payload.id2, cards))
+        setGameState((prev: any) => fuseCards(prev, !isHost, payload.id1, payload.id2, cardsRef.current))
       }
     }
     s.on('opponent_action', handler)
@@ -765,8 +776,10 @@ export function RealArena({ mission }: { mission?: any } = {}) {
   const winner = gameState?.winner || null
   const iWon = !!winner && (meIsHost ? winner === 'player' : winner === 'opponent')
   const enemyHasTaunt = o?.board ? o.board.some((m: any) => m.hasTaunt) : false
-  // L'Eroe avversario è colpibile solo se non ci sono creature nemiche in campo
-  const canHitFace = o?.board ? o.board.length === 0 : false
+  // Regola stile Hearthstone: l'Eroe avversario è colpibile a meno che non ci sia un GUARDIANO
+  const canHitFace = !enemyHasTaunt
+  // "Mat" di gioco: fascia scura semi-trasparente su cui poggiano le creature (contrasto + zona chiara)
+  const matBand: any = { display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', minHeight: 132, minWidth: '54%', maxWidth: '94%', padding: '8px 24px', borderRadius: 22, background: 'rgba(6,5,3,0.34)', border: '1px solid rgba(240,200,120,0.12)', boxShadow: 'inset 0 0 40px rgba(0,0,0,0.4)' }
   // Carta da mostrare nel pannello a sinistra: evocazione recente ha priorità sull'hover
   const previewCard = summonPreview || inspectCard
   // Esistono carte fusione nel catalogo? (mostra il pulsante Fusione solo se sì)
@@ -783,8 +796,9 @@ export function RealArena({ mission }: { mission?: any } = {}) {
     // Limite tavola: max 5 creature in campo
     if (card.type === 'CREATURA' && p.board.length >= 5) { soundEngine.playDamage(); return }
 
-    // Suono o effetto magico speciale se la carta ha abilità
-    if (card.abilityText && card.abilityText.length > 5) {
+    // FX "magia" solo per le MAGIE (non per le creature, che si limitano a essere evocate)
+    const isSpell = card.type !== 'CREATURA'
+    if (isSpell && card.abilityText && card.abilityText.length > 5) {
       if (/cur\w*|ripristin/i.test(card.abilityText)) {
         triggerHealFx('hero_player')
       } else {
@@ -1019,14 +1033,19 @@ export function RealArena({ mission }: { mission?: any } = {}) {
         </div>
       )}
 
-      {/* Sfondo Arena */}
+      {/* Sfondo Arena — tavolo di legno + pergamena (immagine) */}
       <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0 }}>
-        <div style={{ position: 'absolute', inset: 0, background: `radial-gradient(ellipse 130% 45% at 50% 0%, rgba(200,50,15,0.2) 0%, transparent 55%), radial-gradient(ellipse 130% 45% at 50% 100%, rgba(20,60,200,0.13) 0%, transparent 55%), linear-gradient(180deg, rgba(50,10,5,0.4) 0%, rgba(6,8,15,0.96) 25%, rgba(6,8,15,0.96) 75%, rgba(5,12,50,0.4) 100%)` }} />
-        <div style={{ position: 'absolute', top: '50%', left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent 0%, rgba(240,165,0,0.3) 30%, rgba(240,165,0,0.5) 50%, rgba(240,165,0,0.3) 70%, transparent 100%)', transform: 'translateY(-50%)' }} />
-        <div className="glow-orb" style={{ position: 'absolute', left: '50%', top: '-5%', transform: 'translateX(-50%)', width: 700, height: 280, background: 'radial-gradient(ellipse, rgba(248,113,113,0.12) 0%, transparent 65%)', borderRadius: '50%' }} />
-        <div className="glow-orb" style={{ position: 'absolute', left: '50%', bottom: '-5%', transform: 'translateX(-50%)', width: 700, height: 280, background: 'radial-gradient(ellipse, rgba(96,165,250,0.1) 0%, transparent 65%)', borderRadius: '50%', animationDelay: '2s' }} />
-        {Array.from({ length: 22 }, (_, i) => (
-          <div key={i} style={{ position: 'absolute', left: `${(i * 23.7) % 100}%`, bottom: `${18 + (i * 11.3) % 65}%`, width: i % 4 === 0 ? 3 : 2, height: i % 4 === 0 ? 3 : 2, borderRadius: '50%', background: i % 3 === 0 ? 'rgba(240,165,0,0.55)' : i % 3 === 1 ? 'rgba(248,113,113,0.45)' : 'rgba(96,165,250,0.4)', animation: `particle-rise ${3 + (i % 5)}s ${i * 0.35}s linear infinite` }} />
+        {/* Immagine del tavolo da gioco */}
+        <div style={{ position: 'absolute', inset: 0, backgroundImage: 'url(/backgrounds/arena_board.png)', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }} />
+        {/* Leggero scurimento (l'immagine del tavolo è già scura) */}
+        <div style={{ position: 'absolute', inset: 0, background: 'rgba(8,10,16,0.18)' }} />
+        {/* Vignette morbida ai bordi */}
+        <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 135% 80% at 50% 45%, transparent 50%, rgba(6,8,15,0.45) 100%)' }} />
+        {/* Tinta lati: rosso (avversario) in alto, blu (giocatore) in basso, molto leggera */}
+        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(150,30,15,0.12) 0%, transparent 24%, transparent 76%, rgba(20,45,110,0.12) 100%)' }} />
+        {/* Particelle luminose tenui */}
+        {Array.from({ length: 16 }, (_, i) => (
+          <div key={i} style={{ position: 'absolute', left: `${(i * 23.7) % 100}%`, bottom: `${18 + (i * 11.3) % 65}%`, width: i % 4 === 0 ? 3 : 2, height: i % 4 === 0 ? 3 : 2, borderRadius: '50%', background: i % 3 === 0 ? 'rgba(240,165,0,0.4)' : i % 3 === 1 ? 'rgba(248,113,113,0.3)' : 'rgba(96,165,250,0.3)', animation: `particle-rise ${3 + (i % 5)}s ${i * 0.35}s linear infinite` }} />
         ))}
       </div>
 
@@ -1065,9 +1084,12 @@ export function RealArena({ mission }: { mission?: any } = {}) {
       )}
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 2, overflow: 'hidden' }}>
-        {/* Pile: Cimitero a sinistra, Mazzo a destra (del giocatore) */}
+        {/* Pile giocatore (in basso): Cimitero a sinistra, Mazzo a destra */}
         <CardPile kind="grave" label="Cimitero" count={p.graveyard?.length || 0} pos={{ left: 12, bottom: 138 }} />
         <CardPile kind="deck" label="Mazzo" count={p.deck?.length || 0} pos={{ right: 12, bottom: 138 }} />
+        {/* Pile avversario (in alto), speculari */}
+        <CardPile kind="grave" label="Cimitero" count={o.graveyard?.length || 0} pos={{ left: 12, top: 116 }} />
+        <CardPile kind="deck" label="Mazzo" count={o.deck?.length || 0} pos={{ right: 12, top: 116 }} />
 
         {/* Top bar con controlli BGM / SFX */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', flexShrink: 0, background: 'rgba(6,8,15,0.85)', backdropFilter: 'blur(12px)', borderBottom: '1px solid rgba(240,165,0,0.07)' }}>
@@ -1131,6 +1153,9 @@ export function RealArena({ mission }: { mission?: any } = {}) {
           maxHp={o.maxHp || 30}
           shield={o.shield}
           isOpponent
+          handCount={o.hand?.length ?? 0}
+          targetable={!!selectedAttackerId && canHitFace}
+          onTargetClick={() => onAttack('hero', null)}
           flash={oFlash}
           hasSlash={!!slashTargets['hero_opponent']}
           hasSparks={!!sparksTargets['hero_opponent']}
@@ -1143,13 +1168,13 @@ export function RealArena({ mission }: { mission?: any } = {}) {
         {/* Campo avversario */}
         <div onClick={() => { if (selectedAttackerId && canHitFace) onAttack('hero', null) }}
           style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 16px', borderBottom: '1px solid rgba(240,165,0,0.05)', minHeight: 0, cursor: selectedAttackerId && canHitFace ? 'crosshair' : 'default' }}>
-          {oppBoardList.length === 0 ? (
-            <div style={{ color: 'rgba(232,220,200,0.12)', fontSize: 11, border: `1px dashed ${selectedAttackerId && canHitFace ? 'rgba(248,113,113,0.35)' : 'rgba(255,255,255,0.05)'}`, borderRadius: 12, padding: '14px 40px', background: selectedAttackerId && canHitFace ? 'rgba(248,113,113,0.05)' : 'transparent' }}>
-              {selectedAttackerId ? "Clicca qui per colpire l'Eroe!" : 'Nessuna creatura nemica'}
-            </div>
-          ) : (
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-              {oppBoardList.map((m: any) => (
+          <div style={{ ...matBand, ...(selectedAttackerId && canHitFace ? { border: '1px solid rgba(248,113,113,0.4)', background: 'rgba(60,14,10,0.5)' } : {}) }}>
+            {oppBoardList.length === 0 ? (
+              <span style={{ color: 'rgba(232,220,200,0.3)', fontSize: 11 }}>
+                {selectedAttackerId && canHitFace ? "Clicca qui per colpire l'Eroe!" : 'Nessuna creatura nemica'}
+              </span>
+            ) : (
+              oppBoardList.map((m: any) => (
                 <BoardMinion
                   key={m.instanceId}
                   minion={m}
@@ -1167,9 +1192,9 @@ export function RealArena({ mission }: { mission?: any } = {}) {
                   onInspect={setInspectCard}
                   onClick={(e: any) => { e.stopPropagation?.(); if (selectedAttackerId && !dyingMinions[m.instanceId]) onAttack('minion', m.instanceId) }}
                 />
-              ))}
-            </div>
-          )}
+              ))
+            )}
+          </div>
         </div>
 
         {/* Divider + fine turno */}
@@ -1201,11 +1226,11 @@ export function RealArena({ mission }: { mission?: any } = {}) {
 
         {/* Campo giocatore */}
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 16px', borderTop: '1px solid rgba(96,165,250,0.05)', minHeight: 0 }}>
-          {playerBoardList.length === 0 ? (
-            <div style={{ color: 'rgba(232,220,200,0.12)', fontSize: 11, border: '1px dashed rgba(255,255,255,0.05)', borderRadius: 12, padding: '14px 40px' }}>Gioca una carta per evocarla</div>
-          ) : (
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-              {playerBoardList.map((m: any) => (
+          <div style={matBand}>
+            {playerBoardList.length === 0 ? (
+              <span style={{ color: 'rgba(232,220,200,0.3)', fontSize: 11 }}>Gioca una carta per evocarla</span>
+            ) : (
+              playerBoardList.map((m: any) => (
                 <BoardMinion
                   key={m.instanceId}
                   minion={m}
@@ -1224,9 +1249,9 @@ export function RealArena({ mission }: { mission?: any } = {}) {
                   onInspect={setInspectCard}
                   onClick={() => { if (!dyingMinions[m.instanceId]) onFriendlyClick(m) }}
                 />
-              ))}
-            </div>
-          )}
+              ))
+            )}
+          </div>
         </div>
 
         {/* Eroe Giocatore */}
