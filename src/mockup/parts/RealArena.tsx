@@ -31,10 +31,25 @@ function buildPlayerDeck(allCards: any[], inventory: Record<string, number>, car
     const qty = Math.min(Number(n) || 0, owned)
     for (let i = 0; i < qty; i++) deck.push(card)
   }
-  if (deck.length >= 2) return { deck, source: 'deck' }
-  const owned = allCards.filter(c => (inventory[c.id] || 0) > 0).map(c => applyCardLevelStats(c, cardLevels[c.id] || 1))
-  if (owned.length >= 2) return { deck: owned, source: 'owned' }
-  return { deck: allCards.map(c => applyCardLevelStats(c, cardLevels[c.id] || 1)), source: 'all' }
+  let finalDeck = deck;
+  if (deck.length >= 2) {
+    finalDeck = deck;
+  } else {
+    const owned = allCards.filter(c => (inventory[c.id] || 0) > 0).map(c => applyCardLevelStats(c, cardLevels[c.id] || 1))
+    if (owned.length >= 2) finalDeck = owned;
+    else finalDeck = allCards.map(c => applyCardLevelStats(c, cardLevels[c.id] || 1));
+  }
+
+  // PAD DECK: per evitare che le partite finiscano troppo presto in fase di test, 
+  // replichiamo le carte fino ad averne almeno 20.
+  if (finalDeck.length > 0 && finalDeck.length < 20) {
+    const original = [...finalDeck];
+    while (finalDeck.length < 20) {
+      finalDeck = finalDeck.concat(original);
+    }
+  }
+
+  return { deck: finalDeck, source: deck.length >= 2 ? 'deck' : 'all' }
 }
 
 // Mappa rarità delle carte REALI (common/rare/epic/legendary/mythic) al look nuovo

@@ -76,8 +76,8 @@ export function RealCardTile({ card, onClick, badge, dimmed, selected, level, ca
       {cardLevel !== undefined && (
         <div style={{
           position: 'absolute',
-          top: 6,
-          left: 6,
+          top: 55,
+          left: -4,
           background: cardLevel > 1 
             ? 'linear-gradient(135deg, #1e293b, #0f172a)' 
             : 'rgba(15,23,42,0.85)',
@@ -104,8 +104,8 @@ export function RealCardTile({ card, onClick, badge, dimmed, selected, level, ca
       {badge !== undefined && badge !== null && (
         <div style={{
           position: 'absolute',
-          top: 6,
-          right: 6,
+          top: -8,
+          right: -8,
           background: '#f0a500',
           color: '#06080f',
           borderRadius: 12,
@@ -125,7 +125,7 @@ export function RealCardTile({ card, onClick, badge, dimmed, selected, level, ca
       {canUpgrade && (
         <div style={{
           position: 'absolute',
-          bottom: 8,
+          bottom: -12,
           left: '50%',
           transform: 'translateX(-50%)',
           background: 'linear-gradient(135deg, #10b981, #059669)',

@@ -31,10 +31,22 @@ export function buildAiDeck(allCards: any[], opts: { expansion?: string; maxSize
   const bases = Object.values(byBase).sort((a: any, b: any) => (a.cost || 0) - (b.cost || 0))
   if (bases.length === 0) return (allCards || []).slice() // fallback: catalogo intero
 
-  const deck: any[] = []
+  let deck: any[] = []
   for (const base of bases) {
     const n = copiesForRarity(String(base.rarity || 'common'))
     for (let k = 0; k < n && deck.length < maxSize; k++) deck.push(base)
   }
+
+  // PAD DECK: se il catalogo ha poche carte (es. in fase di test), replichiamo per
+  // avere un mazzo decente (almeno 20 carte) ed evitare sconfitte per fatica.
+  if (deck.length > 0 && deck.length < 20) {
+    const original = [...deck];
+    while (deck.length < 20) {
+      deck = deck.concat(original);
+    }
+    // tronchiamo a maxSize se la concatenazione sfora (raro se maxSize è 30 e noi arriviamo a 20)
+    deck = deck.slice(0, Math.max(20, maxSize));
+  }
+
   return deck
 }
