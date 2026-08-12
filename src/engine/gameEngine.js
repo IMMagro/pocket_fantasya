@@ -390,6 +390,55 @@ function applyEffects(state, isPlayer, effects, sourceCard = null) {
         }
         break;
       }
+      case 'skip_turn': {
+        enemy.skipNextTurn = true;
+        pushLog(state, `⏳ L'avversario ${enemy.name} salta il suo prossimo turno!`, 'spell');
+        break;
+      }
+      case 'destroy_named_minion': {
+        const targetName = (effect.tokenName || '').toLowerCase();
+        let destroyed = 0;
+        for (let i = enemy.board.length - 1; i >= 0; i--) {
+          if (enemy.board[i].name.toLowerCase() === targetName) {
+            enemy.board.splice(i, 1);
+            destroyed++;
+          }
+        }
+        if (destroyed > 0) {
+          pushLog(state, `💀 Distrutte ${destroyed} carte nemiche di nome [${effect.tokenName}]!`, 'damage');
+        }
+        break;
+      }
+      case 'steal_mana': {
+        const amount = effect.value || 1;
+        const stolen = Math.min(enemy.mana, amount);
+        enemy.mana -= stolen;
+        active.mana = Math.min(active.maxMana, active.mana + stolen);
+        pushLog(state, `😈 ${active.name} ha rubato ${stolen} Mana a ${enemy.name}!`, 'spell');
+        break;
+      }
+      case 'summon_token': {
+        const count = effect.count || effect.value || 1;
+        for (let i = 0; i < count; i++) {
+          if (active.board.length < 5) {
+            const token = createTokenMinion(effect.tokenName, isPlayer, (state._tokenSeq = (state._tokenSeq || 0) + 1), state.allCards);
+            active.board.push(token);
+            pushLog(state, `🌀 [${token.name}] evocato sul campo!`, 'summon');
+          }
+        }
+        break;
+      }
+      case 'destroy_minion': {
+        const count = effect.count || effect.value || 1;
+        for (let i = 0; i < count; i++) {
+          if (enemy.board.length > 0) {
+            const idx = Math.floor(Math.random() * enemy.board.length);
+            const destroyed = enemy.board.splice(idx, 1)[0];
+            pushLog(state, `💀 [${destroyed.name}] è stato distrutto!`, 'damage');
+          }
+        }
+        break;
+      }
       default: {
         // Effetti futuri: cerca un handler registrato nel catalogo (estendibile).
         const custom = CUSTOM_EFFECT_HANDLERS[effect.type];
@@ -430,6 +479,28 @@ export function executeTurnTriggers(state, isPlayer) {
               active.board.push(token);
               pushLog(state, `🌀 [${minion.name}] genera [${token.name}] (${token.atk}/${token.hp}) sul terreno!`, 'summon');
             }
+          }
+        } else if (trig.type === 'play_specific_from_hand') {
+          const targetName = (trig.tokenName || '').toLowerCase();
+          const cardIdx = active.hand.findIndex(c => c.name.toLowerCase() === targetName);
+          if (cardIdx !== -1 && active.board.length < 5) {
+            const cardToPlay = active.hand.splice(cardIdx, 1)[0];
+            const instanceId = `${isPlayer ? 'p' : 'o'}_${cardToPlay.id}_${Date.now()}`;
+            const abilities = cardToPlay.effects || {};
+            const summonedMinion = {
+              ...cardToPlay,
+              instanceId,
+              currentHp: cardToPlay.hp,
+              canAttack: false,
+              hasTaunt: abilities.taunt,
+              thorns: abilities.thorns,
+              hasShield: abilities.divineShield,
+              turnTriggers: abilities.turnTriggers || [],
+              deathrattle: abilities.deathrattle || []
+            };
+            active.board.push(summonedMinion);
+            pushLog(state, `😻 [${minion.name}] schiera gratis [${summonedMinion.name}] direttamente dalla mano!`, 'summon');
+            applyEffects(state, isPlayer, abilities.battlecry || [], summonedMinion);
           }
         }
       });
@@ -539,6 +610,26 @@ export function playCard(gameState, isPlayer, cardInstanceId, targetId = null) {
   active.hand.splice(cardIdx, 1);
 
   const abilities = card.effects || {};
+
+  // Check sacrifice_summon (often added to battlecry for simplicity in parsing)
+  const sacrificeReq = (abilities.battlecry || []).find(e => e.type === 'sacrifice_summon');
+  if (sacrificeReq) {
+    const targetName = (sacrificeReq.tokenName || '').toLowerCase();
+    const countRequired = sacrificeReq.value || 2;
+    const sacrifices = active.board.filter(m => m.name.toLowerCase() === targetName);
+    if (sacrifices.length < countRequired) {
+       pushLog(state, `⚠️ Non hai abbastanza [${sacrificeReq.tokenName}] da sacrificare (${sacrifices.length}/${countRequired})!`, 'warning');
+       return state;
+    }
+    // Esegui il sacrificio
+    for (let i = 0; i < countRequired; i++) {
+       const idx = active.board.findIndex(m => m.name.toLowerCase() === targetName);
+       if (idx !== -1) {
+          const dead = active.board.splice(idx, 1)[0];
+          pushLog(state, `🩸 [${dead.name}] sacrificato per l'evocazione!`, 'damage');
+       }
+    }
+  }
 
   // If Creature: Summon to board
   if (card.type === 'CREATURA') {
@@ -710,6 +801,13 @@ export function endTurn(gameState) {
   state.currentTurn = isNowPlayer ? 'player' : 'opponent';
 
   const active = isNowPlayer ? state.player : state.opponent;
+
+  if (active.skipNextTurn) {
+    active.skipNextTurn = false;
+    pushLog(state, `⏳ Il turno di ${active.name} è stato saltato a causa di una magia avversaria!`, 'warning');
+    // Salta questo turno e passa subito al prossimo
+    return endTurn(state);
+  }
 
   // Increment Max Mana (up to 10) & Recharge
   if (active.maxMana < 10) {

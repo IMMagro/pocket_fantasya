@@ -31,6 +31,9 @@ export const INSTANT_EFFECTS = [
   { id: 'destroy_minion',    label: 'Distruggi una creatura nemica' },
   { id: 'summon_token',      label: 'Evoca una carta/token',               token: true },
   { id: 'buff_board',        label: 'Potenzia le tue creature (+ATK/+HP)', dual: true },
+  { id: 'skip_turn',         label: 'Salta il prossimo turno',             studio: true },
+  { id: 'destroy_named_minion', label: 'Distruggi minion con nome specifico', value: { key: 'tokenName', label: 'Nome Minion', default: '' }, token: true },
+  { id: 'sacrifice_summon',  label: 'Richiede sacrifici per essere giocata', value: { key: 'tokenName', label: 'Nome Sacrificio', default: '' }, token: true },
   { id: 'absorb_broken_sync', label: 'Assorbi i Sincronizzatori rotti',    studio: false },
 ];
 
@@ -38,6 +41,7 @@ export const INSTANT_EFFECTS = [
 export const TURN_EFFECTS = [
   { id: 'hero_burn',   label: "Danno all'Eroe nemico ogni turno", value: { key: 'value', label: 'Danni', default: 1 } },
   { id: 'spawn_token', label: 'Evoca un token ogni turno',        token: true },
+  { id: 'play_specific_from_hand', label: 'Gioca carta specifica dalla mano', token: true },
 ];
 
 // Keyword passive, applicate all'evocazione (gestite in playCard)

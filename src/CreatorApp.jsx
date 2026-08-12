@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { CardStudio } from './components/card-studio/CardStudio';
 import { PackBalanceStudio } from './components/card-studio/PackBalanceStudio';
-import { Sparkles, Gamepad2, RefreshCw, Layers, Percent } from 'lucide-react';
+import { Sparkles, Gamepad2, RefreshCw, Layers, Percent, Rocket } from 'lucide-react';
 import { soundEngine } from './engine/soundEngine';
 import { io } from 'socket.io-client';
 import starterCards from './data/starterCards.json';
@@ -22,6 +22,7 @@ export function CreatorApp() {
   });
 
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isDeploying, setIsDeploying] = useState(false);
   const [socket, setSocket] = useState(null);
   const [activeTab, setActiveTab] = useState('editor'); // 'editor' | 'pack_balance'
 
@@ -137,6 +138,25 @@ export function CreatorApp() {
     return { ...result, count: cardsToPublish.length };
   };
 
+  const handleDeployCards = async () => {
+    setIsDeploying(true);
+    try {
+      const res = await fetch('http://localhost:4000/api/deploy', {
+        method: 'POST'
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert(data.message);
+      } else {
+        alert('Errore Deploy: ' + data.error + (data.details ? `\n${data.details}` : ''));
+      }
+    } catch (err) {
+      alert('Errore di connessione al server locale durante il deploy.');
+    } finally {
+      setIsDeploying(false);
+    }
+  };
+
   const handleExportCards = () => {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(cards, null, 2));
     const downloadAnchor = document.createElement('a');
@@ -217,6 +237,18 @@ export function CreatorApp() {
               className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs border border-slate-700 transition"
             >
               <RefreshCw className="w-4 h-4" />
+            </button>
+            <button
+              onClick={handleDeployCards}
+              disabled={isDeploying}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition shadow ${
+                isDeploying 
+                  ? 'bg-slate-700 text-slate-400 cursor-not-allowed' 
+                  : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+              }`}
+            >
+              {isDeploying ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Rocket className="w-4 h-4" />}
+              <span>{isDeploying ? 'Deploy in corso...' : 'Pubblica Online'}</span>
             </button>
             <a
               href="/"

@@ -6,6 +6,7 @@ import os from 'os';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { exec } from 'child_process';
 import authRouter from './auth.js';
 import { initDb } from './db.js';
 
@@ -99,6 +100,30 @@ app.post('/api/cards', (req, res) => {
     console.error('Error saving cards:', err);
     res.status(500).json({ error: 'Errore salvataggio carte' });
   }
+});
+
+// API endpoint to push changes to GitHub (Auto-Deploy for Creator Studio)
+app.post('/api/deploy', (req, res) => {
+  // Solo se siamo in locale (non su Render) permettiamo il deploy
+  if (process.env.RENDER) {
+    return res.status(403).json({ error: 'Deploy disabilitato in produzione. Usa il Creator Studio locale.' });
+  }
+  
+  console.log('[AUTO-DEPLOY] Avvio procedura di commit e push...');
+  
+  exec('git add . && git commit -m "Auto-deploy: aggiornamento carte dal Creator Studio" && git push origin main', { cwd: path.join(__dirname, '..') }, (error, stdout, stderr) => {
+    if (error) {
+      console.error('[AUTO-DEPLOY] Errore:', error);
+      // Ignora l'errore se non c'è nulla da committare
+      if (stdout.includes('nothing to commit') || stderr.includes('nothing to commit')) {
+         return res.json({ success: true, message: 'Nessuna nuova modifica da inviare.' });
+      }
+      return res.status(500).json({ error: 'Errore durante il push su GitHub.', details: error.message });
+    }
+    
+    console.log('[AUTO-DEPLOY] Successo:', stdout);
+    res.json({ success: true, message: 'Modifiche inviate! Render si aggiornerà entro due minuti.' });
+  });
 });
 
 // ── Deploy single-box (Oracle Cloud): il server serve anche il frontend ──

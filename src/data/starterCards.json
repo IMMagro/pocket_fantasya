@@ -12,7 +12,11 @@
     "imageUrl": "/illustrations/mattolone.png",
     "abilityTitle": "CI SAREBBE DA FARE...",
     "abilityText": "Nascondi il portafoglio, sei il prossimo... \"attitude da napoletano\"",
-    "flavorText": "Tecno-artigiano d'eccellenza e maestro di chiavi inglesi."
+    "flavorText": "Tecno-artigiano d'eccellenza e maestro di chiavi inglesi.",
+    "effects": {
+      "battlecry": [],
+      "turnTriggers": []
+    }
   },
   {
     "id": "card_tralalero_brainrot",
@@ -27,7 +31,11 @@
     "imageUrl": "/illustrations/tralalero_brainrot.png",
     "abilityTitle": "SPRUZZATA MARCIA",
     "abilityText": "Quando entra in gioco con le sue sneakers, infligge 2 danni a tutti i nemici.",
-    "flavorText": "Ocean vibes & drip supremo."
+    "flavorText": "Ocean vibes & drip supremo.",
+    "effects": {
+      "battlecry": [],
+      "turnTriggers": []
+    }
   },
   {
     "id": "card_trallallero_onda",
@@ -42,7 +50,11 @@
     "imageUrl": "/illustrations/trallallero_onda.png",
     "abilityTitle": "SURFING RUN",
     "abilityText": "Pesca 1 carta quando entra in campo.",
-    "flavorText": "Cavalca la cresta dell'onda senza mai cadere."
+    "flavorText": "Cavalca la cresta dell'onda senza mai cadere.",
+    "effects": {
+      "battlecry": [],
+      "turnTriggers": []
+    }
   },
   {
     "id": "card_void_golem",
@@ -57,7 +69,11 @@
     "imageUrl": "/illustrations/void_golem.png",
     "abilityTitle": "VOID RESONANCE",
     "abilityText": "GUARDIANO: I nemici devono attaccare questa creatura. Infligge 2 danni a chi la attacca.",
-    "flavorText": "Nato dai frammenti d'ossidiana nel cratere abissale."
+    "flavorText": "Nato dai frammenti d'ossidiana nel cratere abissale.",
+    "effects": {
+      "battlecry": [],
+      "turnTriggers": []
+    }
   },
   {
     "id": "card_cyber_fox",
@@ -72,7 +88,11 @@
     "imageUrl": "/illustrations/cyber_shaman_fox.png",
     "abilityTitle": "FLUSSO SPIRITUALE",
     "abilityText": "Cura il tuo Eroe di 4 HP e aumenta il tuo Mana massimo di 1.",
-    "flavorText": "Vede i fili invisibili che legano la magia al codice."
+    "flavorText": "Vede i fili invisibili che legano la magia al codice.",
+    "effects": {
+      "battlecry": [],
+      "turnTriggers": []
+    }
   },
   {
     "id": "card_iron_knight",
@@ -87,6 +107,10 @@
     "imageUrl": "/illustrations/iron_mech_knight.png",
     "abilityTitle": "SCUDO TERRESTRE",
     "abilityText": "GUARDIANO: Protegge l'Eroe dai danni diretti.",
-    "flavorText": "Forgiato nei forni sotterranei della città di pietra."
+    "flavorText": "Forgiato nei forni sotterranei della città di pietra.",
+    "effects": {
+      "battlecry": [],
+      "turnTriggers": []
+    }
   }
 ]
