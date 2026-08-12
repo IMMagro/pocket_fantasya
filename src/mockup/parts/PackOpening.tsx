@@ -307,10 +307,6 @@ export function PackOpening() {
               <div style={{ display:'flex', alignItems:'center', gap:6, color:'#f0a500', fontFamily:'Cinzel, serif', fontWeight:700, fontSize:14 }}>
                 <span>🪙</span> {gold} Monete
               </div>
-              <button onClick={() => { addGold(500); soundEngine.playButtonClick(); }}
-                style={{ background:'rgba(240,165,0,0.15)', border:'1px solid rgba(240,165,0,0.35)', color:'#f0a500', padding:'3px 9px', borderRadius:10, fontSize:10, cursor:'pointer', fontFamily:'Cinzel, serif' }}>
-                +500 Bonus
-              </button>
             </div>
           </div>
 

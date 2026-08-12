@@ -54,8 +54,9 @@ router.post('/api/auth/register', async (req, res) => {
       [username, hash]
     );
     const user = ins.rows[0];
-    await pool.query('INSERT INTO profiles (user_id, data) VALUES ($1, $2::jsonb)', [user.id, '{}']);
-    res.json({ token: sign(user), user, profile: {} });
+    const initialProfile = { pocket_fantasya_player_gold_v1: '1000' };
+    await pool.query('INSERT INTO profiles (user_id, data) VALUES ($1, $2::jsonb)', [user.id, JSON.stringify(initialProfile)]);
+    res.json({ token: sign(user), user, profile: initialProfile });
   } catch (err) {
     // corsa alla registrazione con lo stesso nome → violazione unique
     if (err?.code === '23505') return res.status(409).json({ error: 'Username già in uso, scegline un altro.' });

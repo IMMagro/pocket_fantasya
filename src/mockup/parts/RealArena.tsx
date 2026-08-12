@@ -16,7 +16,7 @@ const DECK_KEY = 'card_clash_newui_deck_v1'
 
 // Costruisce il mazzo del giocatore dal salvataggio del Deck Builder, limitato
 // alle copie effettivamente possedute e con statistiche di livello applicate.
-function buildPlayerDeck(allCards: any[], inventory: Record<string, number>, cardLevels: Record<string, number> = {}): { deck: any[]; source: 'deck' | 'owned' | 'all' } {
+function buildPlayerDeck(allCards: any[], inventory: Record<string, number>, cardLevels: Record<string, number> = {}): { deck: any[]; source: 'deck' | 'owned' | 'all'; rawLength: number } {
   const byId: Record<string, any> = Object.fromEntries(allCards.map(c => [c.id, applyCardLevelStats(c, cardLevels[c.id] || 1)]))
   let counts: Record<string, number> = {}
   try {
@@ -32,12 +32,14 @@ function buildPlayerDeck(allCards: any[], inventory: Record<string, number>, car
     for (let i = 0; i < qty; i++) deck.push(card)
   }
   let finalDeck = deck;
-  if (deck.length >= 2) {
+  let rawLength = deck.length;
+  if (deck.length >= 15) {
     finalDeck = deck;
   } else {
     const owned = allCards.filter(c => (inventory[c.id] || 0) > 0).map(c => applyCardLevelStats(c, cardLevels[c.id] || 1))
-    if (owned.length >= 2) finalDeck = owned;
+    if (owned.length >= 15) finalDeck = owned;
     else finalDeck = allCards.map(c => applyCardLevelStats(c, cardLevels[c.id] || 1));
+    rawLength = finalDeck.length; // Actually if it's fallback, we just say rawLength is whatever fallback gave.
   }
 
   // PAD DECK: per evitare che le partite finiscano troppo presto in fase di test, 
@@ -49,7 +51,7 @@ function buildPlayerDeck(allCards: any[], inventory: Record<string, number>, car
     }
   }
 
-  return { deck: finalDeck, source: deck.length >= 2 ? 'deck' : 'all' }
+  return { deck: finalDeck, source: deck.length >= 15 ? 'deck' : 'all', rawLength: deck.length }
 }
 
 // Mappa rarità delle carte REALI (common/rare/epic/legendary/mythic) al look nuovo
@@ -589,7 +591,7 @@ export function RealArena({ mission }: { mission?: any } = {}) {
           // In missione: l'App gestisce progresso, monete e carta speciale
           mission.onComplete(iWon)
         } else {
-          addGold(iWon ? 150 : 30)
+          addGold(iWon ? 100 : 10)
         }
       }
     }
@@ -923,10 +925,10 @@ export function RealArena({ mission }: { mission?: any } = {}) {
         </div>
 
         {lobbyMode === 'menu' && (
-          <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', justifyContent: 'center', animation: 'slide-up 0.55s ease 0.12s both', position: 'relative', zIndex: 2 }}>
-            <button onClick={startSolo} disabled={myDeck.deck.length < 2}
-              style={{ width: 240, padding: '28px 24px', textAlign: 'left', background: 'linear-gradient(145deg, rgba(200,60,20,0.14) 0%, rgba(13,17,32,0.95) 100%)', border: '1px solid rgba(248,113,113,0.3)', borderRadius: 16, cursor: myDeck.deck.length < 2 ? 'not-allowed' : 'pointer', opacity: myDeck.deck.length < 2 ? 0.55 : 1, transition: 'all 0.25s ease', position: 'relative', overflow: 'hidden' }}
-              onMouseEnter={e => { if (myDeck.deck.length < 2) return; e.currentTarget.style.borderColor = 'rgba(248,113,113,0.65)'; e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 20px 60px rgba(248,113,113,0.18)' }}
+          <div style={{ display: 'flex', gap: 16, animation: 'slide-up 0.4s ease both', position: 'relative', zIndex: 2, flexWrap: 'wrap', justifyContent: 'center' }}>
+            <button onClick={() => { if (myDeck.source === 'deck') { soundEngine.playButtonClick(); startAiMatch() } }} disabled={myDeck.source !== 'deck'}
+              style={{ width: 240, padding: '28px 24px', textAlign: 'left', background: 'linear-gradient(145deg, rgba(248,113,113,0.1) 0%, rgba(13,17,32,0.95) 100%)', border: '1px solid rgba(248,113,113,0.3)', borderRadius: 16, cursor: myDeck.source !== 'deck' ? 'not-allowed' : 'pointer', opacity: myDeck.source !== 'deck' ? 0.55 : 1, transition: 'all 0.25s ease', position: 'relative', overflow: 'hidden' }}
+              onMouseEnter={e => { if (myDeck.source !== 'deck') return; e.currentTarget.style.borderColor = 'rgba(248,113,113,0.65)'; e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 20px 60px rgba(248,113,113,0.18)' }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(248,113,113,0.3)'; e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '' }}>
               <div style={{ width: 48, height: 48, borderRadius: 12, marginBottom: 16, background: 'linear-gradient(135deg, rgba(248,113,113,0.2), rgba(200,40,40,0.28))', border: '1px solid rgba(248,113,113,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Icon.bot style={{ width: 24, height: 24, color: '#f87171' }} />
@@ -936,18 +938,16 @@ export function RealArena({ mission }: { mission?: any } = {}) {
                 {cards.length === 0
                   ? 'Nessuna carta pubblicata. Creale nel Card Creator Studio.'
                   : myDeck.source === 'deck'
-                  ? `Giochi con il tuo mazzo (${myDeck.deck.length} carte). Abilità, suoni ed effetti attivi.`
-                  : myDeck.source === 'owned'
-                  ? `Nessun mazzo salvato: usi le tue ${myDeck.deck.length} carte possedute. Costruiscine uno nel Deck Builder.`
-                  : `Non possiedi ancora carte: demo con tutte le ${myDeck.deck.length} pubblicate. Apri pacchetti e costruisci un mazzo!`}
+                  ? `Giochi con il tuo mazzo (${myDeck.rawLength} carte). Abilità, suoni ed effetti attivi.`
+                  : `Devi inserire almeno 15 carte nel Deck Builder prima di giocare! (Hai ${myDeck.rawLength} carte ora)`}
               </div>
               <div style={{ display: 'inline-block', padding: '4px 12px', borderRadius: 20, background: 'rgba(248,113,113,0.15)', border: '1px solid rgba(248,113,113,0.3)', fontSize: 9, color: '#f87171', fontFamily: 'Cinzel,serif', letterSpacing: '0.1em' }}>
-                {myDeck.deck.length < 2 ? 'SERVONO CARTE' : myDeck.source === 'deck' ? `MAZZO · ${myDeck.deck.length}` : myDeck.source === 'owned' ? `COLLEZIONE · ${myDeck.deck.length}` : `DEMO · ${myDeck.deck.length}`}
+                {myDeck.source !== 'deck' ? 'DECK INCOMPLETO' : `MAZZO · ${myDeck.rawLength}`}
               </div>
             </button>
-            <button onClick={() => { if (myDeck.deck.length >= 2) { soundEngine.playButtonClick(); setLobbyMode('lan') } }} disabled={myDeck.deck.length < 2}
-              style={{ width: 240, padding: '28px 24px', textAlign: 'left', background: 'linear-gradient(145deg, rgba(96,165,250,0.1) 0%, rgba(13,17,32,0.95) 100%)', border: '1px solid rgba(96,165,250,0.3)', borderRadius: 16, cursor: myDeck.deck.length < 2 ? 'not-allowed' : 'pointer', opacity: myDeck.deck.length < 2 ? 0.55 : 1, transition: 'all 0.25s ease', position: 'relative', overflow: 'hidden' }}
-              onMouseEnter={e => { if (myDeck.deck.length < 2) return; e.currentTarget.style.borderColor = 'rgba(96,165,250,0.65)'; e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 20px 60px rgba(96,165,250,0.18)' }}
+            <button onClick={() => { if (myDeck.source === 'deck') { soundEngine.playButtonClick(); setLobbyMode('lan') } }} disabled={myDeck.source !== 'deck'}
+              style={{ width: 240, padding: '28px 24px', textAlign: 'left', background: 'linear-gradient(145deg, rgba(96,165,250,0.1) 0%, rgba(13,17,32,0.95) 100%)', border: '1px solid rgba(96,165,250,0.3)', borderRadius: 16, cursor: myDeck.source !== 'deck' ? 'not-allowed' : 'pointer', opacity: myDeck.source !== 'deck' ? 0.55 : 1, transition: 'all 0.25s ease', position: 'relative', overflow: 'hidden' }}
+              onMouseEnter={e => { if (myDeck.source !== 'deck') return; e.currentTarget.style.borderColor = 'rgba(96,165,250,0.65)'; e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 20px 60px rgba(96,165,250,0.18)' }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(96,165,250,0.3)'; e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '' }}>
               <div style={{ width: 48, height: 48, borderRadius: 12, marginBottom: 16, background: 'linear-gradient(135deg, rgba(96,165,250,0.2), rgba(40,90,200,0.28))', border: '1px solid rgba(96,165,250,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Icon.trophy style={{ width: 24, height: 24, color: '#60a5fa' }} />
