@@ -33,3 +33,6 @@ Thumbs.db
 # Scratch scripts e backup del catalogo (temporanei, non versionare)
 scratch/
 server/data/*.backup.json
+server/data/cardclash.db
+server/data/cardclash.db-shm
+server/data/cardclash.db-wal

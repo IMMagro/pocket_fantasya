@@ -6,6 +6,7 @@ import os from 'os';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import authRouter from './auth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,6 +44,9 @@ function getLocalIp() {
 
 // In-memory active game rooms
 const rooms = new Map();
+
+// Auth self-hosted (registrazione/login/profilo) — rotte /api/auth/* e /api/profile
+app.use(authRouter);
 
 // API endpoint to return server LAN IP and status
 app.get('/api/info', (req, res) => {
