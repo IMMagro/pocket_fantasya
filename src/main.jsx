@@ -11,6 +11,8 @@ import './mockup/newui.css';
 import App from './mockup/parts/App';
 import { CreatorApp } from './CreatorApp';
 
+import { GlobalCardViewerModal } from './components/card/GlobalCardViewerModal';
+
 // Rotta riservata al Card Creator Studio (invariata): /creator oppure #creator.
 function isCreatorRoute() {
   return window.location.pathname.includes('/creator') || window.location.hash.includes('creator');
@@ -25,5 +27,6 @@ const Root = isCreatorRoute() ? CreatorApp : App;
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <Root />
+    <GlobalCardViewerModal />
   </React.StrictMode>
 );

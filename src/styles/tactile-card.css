@@ -495,8 +495,8 @@
 /* Badge on top corner for variant */
 .tactile-variant-tag {
   position: absolute;
-  top: 7px;
-  right: 7px;
+  bottom: 8px;
+  right: 8px;
   padding: 2px 6px;
   border-radius: 6px;
   font-family: 'Cinzel', serif;

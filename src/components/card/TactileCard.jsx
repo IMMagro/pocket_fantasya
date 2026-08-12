@@ -251,6 +251,12 @@ export function TactileCard({
   return (
     <div
       onClick={onClick}
+      onContextMenu={(e) => {
+        if (interactive) {
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent('inspect-card', { detail: { card } }));
+        }
+      }}
       onMouseMove={handleMouseMove}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}

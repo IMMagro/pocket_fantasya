@@ -736,9 +736,9 @@ export function endTurn(gameState) {
       pushLog(state, `🔥 Mano piena! [${burnedCard.name}] è stata bruciata.`, 'warning');
     }
   } else {
-    // Mazzo esaurito: sconfitta immediata (deck-out), niente più danno da fatica.
-    active.deckedOut = true;
-    pushLog(state, `📕 Mazzo esaurito! ${active.name} non ha più carte da pescare e perde la partita.`, 'death');
+    // Mazzo esaurito: invece di sconfitta immediata (che frustrava i test con poche carte),
+    // diamo solo un avviso. Niente pescate, ma si può continuare a giocare.
+    pushLog(state, `📕 Mazzo esaurito! ${active.name} non ha più carte da pescare.`, 'warning');
   }
 
   state.turnNumber += 1;
