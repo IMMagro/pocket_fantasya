@@ -31,6 +31,17 @@ export function getHubUrl(): string {
     const saved = localStorage.getItem(HUB_KEY)
     if (saved) return saved
   } catch {}
+  // Online (build servita dalla stessa VM, es. Oracle Cloud): il server è la
+  // nostra stessa origine → niente IP da inserire, i colleghi aprono solo l'URL.
+  // In dev locale (Vite su 5173, server su 4000) resta il default localhost:4000.
+  if (
+    typeof window !== 'undefined' &&
+    !IS_PACKAGED_CLIENT &&
+    (import.meta as any).env?.PROD &&
+    /^https?:$/.test(window.location.protocol)
+  ) {
+    return window.location.origin
+  }
   return DEFAULT_HUB_URL
 }
 

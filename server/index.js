@@ -24,8 +24,9 @@ const io = new Server(server, {
   }
 });
 
-const PORT = 4000;
+const PORT = process.env.PORT || 4000;
 const CARDS_FILE_PATH = path.join(__dirname, 'data', 'cards.json');
+const DIST_DIR = path.join(__dirname, '..', 'dist');
 
 // Helper to get local LAN IPv4 address
 function getLocalIp() {
@@ -94,6 +95,19 @@ app.post('/api/cards', (req, res) => {
     res.status(500).json({ error: 'Errore salvataggio carte' });
   }
 });
+
+// ── Deploy single-box (Oracle Cloud): il server serve anche il frontend ──
+// Se esiste la build (dist/), la stessa macchina/porta serve gioco + API + PvP.
+// Radice "/" → interfaccia dei colleghi (newui). /index.html resta l'app admin.
+if (fs.existsSync(DIST_DIR)) {
+  const newuiHtml = path.join(DIST_DIR, 'newui.html');
+  const indexHtml = path.join(DIST_DIR, 'index.html');
+  app.get('/', (req, res) => {
+    res.sendFile(fs.existsSync(newuiHtml) ? newuiHtml : indexHtml);
+  });
+  app.use(express.static(DIST_DIR));
+  console.log('[STATIC] Frontend servito da', DIST_DIR);
+}
 
 // Socket.io Real-time multiplayer game synchronization
 io.on('connection', (socket) => {
