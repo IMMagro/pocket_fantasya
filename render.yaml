@@ -1,0 +1,18 @@
+# Blueprint Render: definisce il servizio web di Card Clash.
+# Su Render: New → Blueprint → collega questo repo → Render legge questo file.
+# Il gioco + API + PvP girano in un solo servizio Node (single-box).
+services:
+  - type: web
+    name: card-clash
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: node server/index.js
+    envVars:
+      # Segreto per i token di sessione: lo genera Render in automatico.
+      - key: JWT_SECRET
+        generateValue: true
+      # Stringa di connessione a Neon (Postgres). La incolli tu nella dashboard
+      # Render (non finisce nel repo): Neon → Connection string.
+      - key: DATABASE_URL
+        sync: false

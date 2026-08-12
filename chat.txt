@@ -1,0 +1,80 @@
+Chiaro: l'IP è quello giusto (è la VM), ma sei bloccato fuori anche tu e non hai un terminale sulla VM. Nessun problema — dato che la VM è vuota (non ci abbiamo ancora messo niente), la via più semplice e a prova di errore è ricrearla incollando la nostra chiave al momento della creazione. Così l'accesso è garantito e chiudiamo per sempre la confusione delle chiavi.
+
+Ricrea l'istanza con la nostra chiave (console Oracle)
+Menu ☰ → Compute → Instances → Create instance
+Name: cardclash
+Image and shape:
+Image → Canonical Ubuntu 22.04
+Shape → Ampere → VM.Standard.A1.Flex → 1 OCPU / 6 GB (resta nel Free)
+Networking: lascia la VCN/subnet esistente, e assicurati che "Assign a public IPv4 address" sia attivo.
+Add SSH keys → scegli "Paste public keys" e incolla esattamente questa riga:
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINr2mKSy7ZitCd+MzeEHZ/iZxFjfkV8lBhWAg6rJUZz4 cardclash-deploy
+Create. Quando lo stato diventa Running, copia il nuovo Public IP address e mandamelo.
+Un paio di note:
+
+Se compare "Out of capacity" sull'ARM, riprova dopo qualche minuto o cambia Availability Domain.
+Il vecchio IP (84.8.249.161) probabilmente cambierà: uso quello nuovo che mi dai.
+La vecchia istanza bloccata puoi terminarla dopo (Instance → More actions → Terminate), quando siamo dentro alla nuova.
+Se invece preferisci non ricrearla (es. timore capacità ARM), esiste una via alternativa via console seriale Oracle per aggiungere la chiave senza ricreare: è più macchinosa, ma te la guido. Dimmi tu — appena ho l'IP della VM con la nostra chiave, entro e parto col deploy.
+
+API Error
+Out of capacity for shape VM.Standard.A1.Flex in availability domain AD-1. Create the instance in a different availability domain or try again later.If you specified a fault domain, try creating the instance without specifying a fault domain. If that doesn’t work, please try again later.Learn more
+
+È il classico intoppo dell'ARM gratis: "Out of capacity". Capacità ARM condivisa e spesso esaurita — può restare così per ore o giorni. Due strade:
+
+Opzione rapida (30 secondi)
+Nel dialogo di creazione, alla voce Availability Domain prova a selezionare AD-2 o AD-3 (se il menu te li offre) e riprova. A volte una delle altre AD ha posto. Se la tua region ha una sola AD, salta a sotto.
+
+Opzione affidabile (consigliata — si crea sempre)
+Cambia shape e usa la micro AMD del piano gratuito, che è quasi sempre disponibile:
+
+Shape → Specialty and previous generation (oppure "AMD") → VM.Standard.E2.1.Micro → 1/8 OCPU · 1 GB RAM (Always Free, etichetta verde "Always Free eligible").
+Tutto il resto uguale: Ubuntu 22.04, IP pubblico attivo, e incolla la stessa chiave ssh-ed25519 …cardclash-deploy.
+Sì, è piccola (1 GB RAM), ma per il nostro caso (pochi colleghi) basta: il server è leggero. Me ne occupo io lato deploy — aggiungo un po' di swap e faccio la build pesante qui in locale caricando solo il risultato sulla VM, così la macchinina non fatica. Node + SQLite + PvP girano tranquilli.
+
+Il mio consiglio: se AD-2/AD-3 non sbloccano l'ARM subito, prendi la AMD E2.1.Micro e andiamo online adesso — poi, se un giorno vuoi più potenza, passiamo all'ARM quando c'è capacità (senza rifare niente, si sposta il codice).
+
+Dimmi quale prendi e appena è Running mandami il Public IP.
+
+queste sono quelle che ho
+
+senti non va sto oracle c'è un altro modo sempre gratis?
+
+Ti capisco — Oracle con la lotteria della capacità ARM e il balletto delle chiavi SSH è frustrante. Sì, ci sono modi gratis e più semplici, che tra l'altro tornano vicini alla tua idea iniziale ("pusho e va online") senza SSH.
+
+Il nostro server è leggero (Node + API + PvP + profili), quindi si adatta bene a queste piattaforme. Ti spiego le due migliori, con i compromessi onesti:
+
+Render — è la più vicina al tuo sogno: colleghi il repo GitHub, e a ogni push si aggiorna da solo. Niente SSH, niente chiavi, niente carta di credito. Unico neo: nel piano gratis il servizio "si addormenta" dopo ~15 min di inattività, quindi il primo che apre il gioco dopo una pausa aspetta ~30-60 secondi (poi vola). Si può tenere sveglio con un "ping" gratuito ogni 10 minuti. Un dettaglio tecnico: il loro disco gratis non è permanente, quindi i profili li sposto su un database gratuito Neon (Postgres) — è lavoro mio, un paio di modifiche, tu non fai niente.
+Fly.io — tecnicamente perfetta: sempre accesa (nessuna attesa), tiene il nostro codice così com'è (SQLite su un disco gratuito). Neo: al momento dell'iscrizione chiede una carta (per verifica; con il nostro uso minuscolo non addebita), e si configura da riga di comando (lo faccio io).
+Quale preferisci?
+
+Su quale piattaforma gratuita mettiamo il gioco online?
+
+Render + Neon (Consigliata)
+
+Ottimo, Render + Neon. Ti torna vicino all'idea originale: colleghi GitHub e a ogni push si aggiorna, zero SSH.
+
+L'unico lavoro di codice è mio: sposto i profili da SQLite a Postgres (Neon). Parto subito. Prima cambio le dipendenze e controllo se ho Docker per testare in locale senza segreti:
+
+
+Eseguito 2 comandi
+Ora riscrivo db.js per Postgres (Neon):
+
+Aggiornato
+db.js
++35
+-31
+Ora riscrivo auth.js per Postgres (query asincrone, JSONB per i profili):
+
+Aggiornato
+auth.js
++65
+-41
+Ora aggiorno index.js per inizializzare il DB all'avvio, e creo il file di configurazione per Render:
+
+
+Modificato un file, letto un file, creato 2 file, eseguito un comando
++39
+-11
+Limite di utilizzo raggiunto
+Hai raggiunto il limite di utilizzo. Riprova dopo il ripristino del limite.

@@ -1,37 +1,41 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Database SQLite self-hosted (gira sulla VM Oracle, un file locale).
-// Tiene utenti (login) e profili (progressi: monete, carte, mazzi, campagna).
-// Un file solo, zero server esterni — 100% sulla nostra macchina.
+// Database Postgres (Neon, piano gratuito). Tiene utenti (login) e profili
+// (progressi: monete, carte, mazzi, campagna). Connessione via DATABASE_URL.
+// Su Render/Neon la connessione è cifrata (SSL).
 // ─────────────────────────────────────────────────────────────────────────────
-import Database from 'better-sqlite3';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import pg from 'pg'
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const { Pool } = pg
+const connectionString = process.env.DATABASE_URL || ''
 
-const DATA_DIR = path.join(__dirname, 'data');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+if (!connectionString) {
+  console.warn('[DB] ⚠️  DATABASE_URL non impostato: il login/i profili non funzioneranno finché non lo configuri (Neon).')
+}
 
-const DB_PATH = path.join(DATA_DIR, 'cardclash.db');
-export const db = new Database(DB_PATH);
+// Neon e i provider cloud richiedono SSL; in locale (se mai) niente SSL.
+const isLocal = /localhost|127\.0\.0\.1/.test(connectionString)
+export const pool = new Pool({
+  connectionString: connectionString || undefined,
+  ssl: connectionString && !isLocal ? { rejectUnauthorized: false } : false,
+  max: 5, // Neon free: poche connessioni, teniamo il pool piccolo
+})
 
-// WAL = letture/scritture concorrenti più fluide (più giocatori insieme).
-db.pragma('journal_mode = WAL');
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    username      TEXT NOT NULL UNIQUE COLLATE NOCASE,
-    password_hash TEXT NOT NULL,
-    created_at    TEXT NOT NULL
-  );
-  CREATE TABLE IF NOT EXISTS profiles (
-    user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-    data       TEXT NOT NULL DEFAULT '{}',
-    updated_at TEXT NOT NULL
-  );
-`);
-
-console.log('[DB] SQLite pronto ->', DB_PATH);
+// Crea le tabelle se non esistono (username unico case-insensitive via indice su lower()).
+export async function initDb() {
+  if (!connectionString) return
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id            SERIAL PRIMARY KEY,
+      username      TEXT NOT NULL,
+      password_hash TEXT NOT NULL,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_idx ON users (lower(username));
+    CREATE TABLE IF NOT EXISTS profiles (
+      user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      data       JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `)
+  console.log('[DB] Postgres pronto (tabelle users + profiles).')
+}

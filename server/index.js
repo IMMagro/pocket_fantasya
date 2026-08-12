@@ -7,6 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import authRouter from './auth.js';
+import { initDb } from './db.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -178,10 +179,15 @@ io.on('connection', (socket) => {
   });
 });
 
-server.listen(PORT, '0.0.0.0', () => {
-  const localIp = getLocalIp();
-  console.log(`=================================================`);
-  console.log(`  CARD CLASH GAME & LAN SERVER ATTIVO!`);
-  console.log(`  Indirizzo Locale (PC Host): http://${localIp}:${PORT}`);
-  console.log(`=================================================`);
-});
+// Inizializza il DB (crea le tabelle se mancano) prima di accettare richieste.
+initDb()
+  .catch(err => console.error('[DB] init fallita:', err.message))
+  .finally(() => {
+    server.listen(PORT, '0.0.0.0', () => {
+      const localIp = getLocalIp();
+      console.log(`=================================================`);
+      console.log(`  CARD CLASH GAME & LAN SERVER ATTIVO!`);
+      console.log(`  Indirizzo Locale (PC Host): http://${localIp}:${PORT}`);
+      console.log(`=================================================`);
+    });
+  });

@@ -1,31 +1,20 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Auth self-hosted: registrazione/login con username+password (bcrypt) e sessione
-// via JWT. Più le rotte del profilo (progressi salvati per utente sul server).
-// Montato in server/index.js. Nessuna dipendenza esterna: tutto sulla VM.
+// via JWT. Più le rotte del profilo (progressi salvati per utente su Postgres/Neon).
+// Montato in server/index.js.
 // ─────────────────────────────────────────────────────────────────────────────
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { db } from './db.js';
+import { pool } from './db.js';
 
 const router = express.Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-insecure-secret-CAMBIAMI-in-produzione';
 if (!process.env.JWT_SECRET) {
-  console.warn('[AUTH] ⚠️  JWT_SECRET non impostato: uso un segreto di sviluppo. Sulla VM imposta JWT_SECRET.');
+  console.warn('[AUTH] ⚠️  JWT_SECRET non impostato: uso un segreto di sviluppo. In produzione imposta JWT_SECRET.');
 }
 const TOKEN_TTL = '30d'; // i colleghi restano loggati un mese
-
-// ── Statement preparati ──
-const qUserByName = db.prepare('SELECT * FROM users WHERE username = ?');
-const qUserById   = db.prepare('SELECT id, username, created_at FROM users WHERE id = ?');
-const qInsertUser = db.prepare('INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)');
-const qInsertProfile = db.prepare('INSERT INTO profiles (user_id, data, updated_at) VALUES (?, ?, ?)');
-const qProfile    = db.prepare('SELECT data FROM profiles WHERE user_id = ?');
-const qUpsertProfile = db.prepare(`
-  INSERT INTO profiles (user_id, data, updated_at) VALUES (@uid, @data, @now)
-  ON CONFLICT(user_id) DO UPDATE SET data = @data, updated_at = @now
-`);
 
 function sign(user) {
   return jwt.sign({ uid: user.id, username: user.username }, JWT_SECRET, { expiresIn: TOKEN_TTL });
@@ -50,54 +39,89 @@ function validName(u) { return typeof u === 'string' && /^[a-zA-Z0-9_ ]{3,20}$/.
 function validPass(p) { return typeof p === 'string' && p.length >= 6 && p.length <= 100; }
 
 // ── Registrazione ──
-router.post('/api/auth/register', (req, res) => {
+router.post('/api/auth/register', async (req, res) => {
   const username = (req.body?.username || '').trim();
   const password = req.body?.password || '';
   if (!validName(username)) return res.status(400).json({ error: 'Username: 3-20 caratteri (lettere, numeri, _ e spazio).' });
   if (!validPass(password)) return res.status(400).json({ error: 'Password: almeno 6 caratteri.' });
-  if (qUserByName.get(username)) return res.status(409).json({ error: 'Username già in uso, scegline un altro.' });
+  try {
+    const exists = await pool.query('SELECT 1 FROM users WHERE lower(username) = lower($1)', [username]);
+    if (exists.rowCount > 0) return res.status(409).json({ error: 'Username già in uso, scegline un altro.' });
 
-  const now = new Date().toISOString();
-  const hash = bcrypt.hashSync(password, 10);
-  const info = qInsertUser.run(username, hash, now);
-  qInsertProfile.run(info.lastInsertRowid, '{}', now);
-  const user = { id: info.lastInsertRowid, username };
-  res.json({ token: sign(user), user, profile: {} });
+    const hash = bcrypt.hashSync(password, 10);
+    const ins = await pool.query(
+      'INSERT INTO users (username, password_hash) VALUES ($1, $2) RETURNING id, username',
+      [username, hash]
+    );
+    const user = ins.rows[0];
+    await pool.query('INSERT INTO profiles (user_id, data) VALUES ($1, $2::jsonb)', [user.id, '{}']);
+    res.json({ token: sign(user), user, profile: {} });
+  } catch (err) {
+    // corsa alla registrazione con lo stesso nome → violazione unique
+    if (err?.code === '23505') return res.status(409).json({ error: 'Username già in uso, scegline un altro.' });
+    console.error('[AUTH] register error:', err.message);
+    res.status(500).json({ error: 'Errore del server, riprova.' });
+  }
 });
 
 // ── Login ──
-router.post('/api/auth/login', (req, res) => {
+router.post('/api/auth/login', async (req, res) => {
   const username = (req.body?.username || '').trim();
   const password = req.body?.password || '';
-  const row = qUserByName.get(username);
-  if (!row || !bcrypt.compareSync(password, row.password_hash)) {
-    return res.status(401).json({ error: 'Username o password errati.' });
+  try {
+    const r = await pool.query('SELECT id, username, password_hash FROM users WHERE lower(username) = lower($1)', [username]);
+    const row = r.rows[0];
+    if (!row || !bcrypt.compareSync(password, row.password_hash)) {
+      return res.status(401).json({ error: 'Username o password errati.' });
+    }
+    const user = { id: row.id, username: row.username };
+    const p = await pool.query('SELECT data FROM profiles WHERE user_id = $1', [row.id]);
+    res.json({ token: sign(user), user, profile: p.rows[0]?.data || {} });
+  } catch (err) {
+    console.error('[AUTH] login error:', err.message);
+    res.status(500).json({ error: 'Errore del server, riprova.' });
   }
-  const user = { id: row.id, username: row.username };
-  const p = qProfile.get(row.id);
-  res.json({ token: sign(user), user, profile: p ? JSON.parse(p.data || '{}') : {} });
 });
 
 // ── Chi sono (ricarica sessione da token) ──
-router.get('/api/auth/me', requireAuth, (req, res) => {
-  const user = qUserById.get(req.userId);
-  if (!user) return res.status(404).json({ error: 'Utente non trovato' });
-  const p = qProfile.get(req.userId);
-  res.json({ user: { id: user.id, username: user.username }, profile: p ? JSON.parse(p.data || '{}') : {} });
+router.get('/api/auth/me', requireAuth, async (req, res) => {
+  try {
+    const u = await pool.query('SELECT id, username FROM users WHERE id = $1', [req.userId]);
+    if (u.rowCount === 0) return res.status(404).json({ error: 'Utente non trovato' });
+    const p = await pool.query('SELECT data FROM profiles WHERE user_id = $1', [req.userId]);
+    res.json({ user: u.rows[0], profile: p.rows[0]?.data || {} });
+  } catch (err) {
+    console.error('[AUTH] me error:', err.message);
+    res.status(500).json({ error: 'Errore del server' });
+  }
 });
 
 // ── Profilo: leggi progressi ──
-router.get('/api/profile', requireAuth, (req, res) => {
-  const p = qProfile.get(req.userId);
-  res.json(p ? JSON.parse(p.data || '{}') : {});
+router.get('/api/profile', requireAuth, async (req, res) => {
+  try {
+    const p = await pool.query('SELECT data FROM profiles WHERE user_id = $1', [req.userId]);
+    res.json(p.rows[0]?.data || {});
+  } catch (err) {
+    console.error('[AUTH] get profile error:', err.message);
+    res.status(500).json({ error: 'Errore del server' });
+  }
 });
 
 // ── Profilo: salva progressi (monete, carte, mazzi, campagna) ──
-router.put('/api/profile', requireAuth, (req, res) => {
+router.put('/api/profile', requireAuth, async (req, res) => {
   const data = req.body?.data;
   if (typeof data !== 'object' || data === null) return res.status(400).json({ error: 'Dati profilo non validi' });
-  qUpsertProfile.run({ uid: req.userId, data: JSON.stringify(data), now: new Date().toISOString() });
-  res.json({ ok: true });
+  try {
+    await pool.query(
+      `INSERT INTO profiles (user_id, data, updated_at) VALUES ($1, $2::jsonb, now())
+       ON CONFLICT (user_id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`,
+      [req.userId, JSON.stringify(data)]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[AUTH] put profile error:', err.message);
+    res.status(500).json({ error: 'Errore del server' });
+  }
 });
 
 export default router;
