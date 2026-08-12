@@ -113,11 +113,13 @@ app.post('/api/deploy', (req, res) => {
   
   exec('git add . && git commit -m "Auto-deploy: aggiornamento carte dal Creator Studio" && git push origin main', { cwd: path.join(__dirname, '..') }, (error, stdout, stderr) => {
     if (error) {
-      console.error('[AUTO-DEPLOY] Errore:', error);
-      // Ignora l'errore se non c'è nulla da committare
-      if (stdout.includes('nothing to commit') || stderr.includes('nothing to commit')) {
+      const isNothingToCommit = (stdout && stdout.includes('nothing to commit')) || (stderr && stderr.includes('nothing to commit'));
+      
+      if (isNothingToCommit) {
          return res.json({ success: true, message: 'Nessuna nuova modifica da inviare.' });
       }
+
+      console.error('[AUTO-DEPLOY] Errore:', error);
       return res.status(500).json({ error: 'Errore durante il push su GitHub.', details: error.message });
     }
     
