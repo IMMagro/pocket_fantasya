@@ -97,7 +97,11 @@ export function RealDeckBuilder() {
   const types = Array.from(new Set(ownedCards.map(c => c.type)))
 
   const saveDeck = () => {
-    try { localStorage.setItem(DECK_KEY, JSON.stringify({ name: deckName, counts: deck })) } catch {}
+    try {
+      localStorage.setItem(DECK_KEY, JSON.stringify({ name: deckName, counts: deck }))
+      // Notifica la sync profilo (salvataggio mazzo sul server) subito, non solo al timer.
+      window.dispatchEvent(new CustomEvent('pocket_fantasya_state_change'))
+    } catch {}
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }

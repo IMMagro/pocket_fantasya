@@ -12,6 +12,9 @@ import { Missions } from './Missions'
 import { getMission } from '../campaign'
 import { usePlayerMissions } from '../questState'
 import { getHubHost, getHubUrl, hasHub, setHubUrl, normalizeHub, IS_PACKAGED_CLIENT } from '../serverConfig'
+import { LoginScreen } from './LoginScreen'
+import { fetchMe, logout as authLogout, type AuthUser, type AuthResult } from '../auth'
+import { applyProfile, startProfileSync, clearLocalProgress } from '../profileSync'
 
 // Ordine di rarità (alto → basso) per scegliere la carta più prestigiosa
 const RARITY_RANK: Record<string, number> = { mythic: 4, legendary: 3, epic: 2, rare: 1, common: 0 }
@@ -306,7 +309,42 @@ export default function App() {
     return () => clearInterval(t)
   }, [])
 
+  // ── Auth: ripristina la sessione all'avvio, attiva la sync quando c'è un utente ──
+  const [user, setUser] = useState<AuthUser | null>(null)
+  const [authChecked, setAuthChecked] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    fetchMe().then(res => {
+      if (!alive) return
+      if (res) { applyProfile(res.profile); setUser(res.user) }
+      setAuthChecked(true)
+    })
+    return () => { alive = false }
+  }, [])
+
+  useEffect(() => {
+    if (!user) return
+    const stop = startProfileSync()
+    return stop
+  }, [user])
+
+  const handleAuthed = (res: AuthResult) => { applyProfile(res.profile); setUser(res.user) }
+  const handleLogout = () => { authLogout(); clearLocalProgress(); setUser(null) }
+
   const isFull = activeNav === 'deck' || activeNav === 'packs' || activeNav === 'collection' || activeNav === 'arena' || activeNav === 'missions'
+
+  // Gate d'accesso: senza profilo non si entra nel gioco.
+  if (!authChecked) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#06080f', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(240,165,0,0.7)', fontFamily: 'Cinzel, serif', letterSpacing: '0.12em', textTransform: 'uppercase', fontSize: 13 }}>
+        Caricamento…
+      </div>
+    )
+  }
+  if (!user) {
+    return <LoginScreen onAuthed={handleAuthed} />
+  }
 
   return (
     <div style={{ minHeight: '100vh', height: isFull ? '100vh' : undefined, background: '#06080f', position: 'relative', overflow: 'hidden' }}>
@@ -403,8 +441,15 @@ export default function App() {
             onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(240,165,0,0.25)' }}>
             📡
           </button>
-          <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'linear-gradient(135deg, #2d1a4a, #0d1120)', border: '2px solid rgba(240,165,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-            <Icon.wizard style={{ width: 16, height: 16, color: '#f0a500' }} />
+          <div title={`Connesso come ${user.username}`}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 6px 5px 12px', background: 'rgba(13,17,32,0.8)', border: '1px solid rgba(240,165,0,0.25)', borderRadius: 20 }}>
+            <span className="font-cinzel" style={{ fontSize: 12, fontWeight: 700, color: '#e8dcc8', letterSpacing: '0.04em', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.username}</span>
+            <button onClick={handleLogout} title="Esci dal profilo"
+              style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(135deg, #2d1a4a, #0d1120)', border: '1px solid rgba(240,165,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0, color: '#f0a500' }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = '#f0a500' }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(240,165,0,0.3)' }}>
+              <span style={{ fontSize: 14, lineHeight: 1 }}>🚪</span>
+            </button>
           </div>
         </div>
       </nav>
