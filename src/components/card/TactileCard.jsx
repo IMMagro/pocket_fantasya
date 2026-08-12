@@ -213,6 +213,8 @@ export function TactileCard({
   const variantInfo = CARD_VARIANTS[activeVariantKey] || CARD_VARIANTS.standard;
   const isOutMode = activeVariantKey === 'out';
   const isFullArtMode = activeVariantKey === 'full_art' || activeVariantKey === 'secret_holo' || isOutMode || !!card.isFullArt;
+  // Spazio da riservare a destra del titolo quando c'è il badge variante (così non lo copre)
+  const tagClear = variantInfo.badge ? Math.round(cfg.headerPl * 1.25) : 6;
 
   // Active Special Finish Shader (from variant directly, rarity effects are handled by the separate overlay now)
   const finishShaderClass = variantInfo.cssClass || '';
@@ -293,7 +295,11 @@ export function TactileCard({
           style={{
             fontSize: cfg.fullArtTagSize,
             backgroundColor: variantInfo.tagColor,
-            color: '#ffffff'
+            color: '#ffffff',
+            maxWidth: Math.max(28, tagClear - 8),
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis'
           }}
         >
           {variantInfo.badge}
@@ -345,9 +351,9 @@ export function TactileCard({
           <div 
             style={{ 
               position: 'absolute', 
-              top: cfg.padding.split(' ')[0] || '8px', 
-              left: (cfg.ribbon.left + cfg.ribbon.width + 5), 
-              right: 6, 
+              top: cfg.padding.split(' ')[0] || '8px',
+              left: (cfg.ribbon.left + cfg.ribbon.width + 5),
+              right: tagClear,
               zIndex: 12,
               textAlign: 'center',
               display: 'flex',
